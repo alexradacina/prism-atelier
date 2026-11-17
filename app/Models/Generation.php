@@ -25,6 +25,9 @@ class Generation extends Model
             'reference_images' => 'array', 'quoted_pricing' => 'array', 'rates' => 'array', 'usage' => 'array',
             'completed_at' => 'immutable_datetime', 'synced_at' => 'immutable_datetime',
             'image_url_expires_at' => 'immutable_datetime', 'settled_at' => 'immutable_datetime',
+            'provider_slot' => 'boolean', 'submission_uncertain' => 'boolean',
+            'provider_created_at' => 'immutable_datetime', 'submission_retry_at' => 'immutable_datetime',
+            'sync_retry_at' => 'immutable_datetime', 'submission_attempts' => 'integer', 'sync_failures' => 'integer',
         ];
     }
 
@@ -47,6 +50,7 @@ class Generation extends Model
             'estimated_cost' => Money::format($this->estimated_nanos),
             'actual_cost' => $this->actual_nanos === null ? null : Money::format($this->actual_nanos),
             'error' => $this->error_message, 'created_at' => $this->created_at->toIso8601String(),
+            'notice' => $this->waiting_message,
         ];
     }
 }

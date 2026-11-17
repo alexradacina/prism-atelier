@@ -25,6 +25,7 @@ abstract class TestCase extends BaseTestCase
         return array_replace([
             'id' => 'gen_test', 'object' => 'generation', 'status' => $status,
             'metadata' => [], 'rates' => $this->pricing()['rates'],
+            'created_at' => now('UTC')->toIso8601String(),
             'usage' => $status === 'succeeded' ? [
                 'input_text_tokens' => 12, 'input_image_tokens' => 765,
                 'output_tokens' => 6450, 'reasoning_tokens' => 3184, 'total_tokens' => 10411,

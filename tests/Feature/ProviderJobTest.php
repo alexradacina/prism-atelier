@@ -80,7 +80,7 @@ class ProviderJobTest extends TestCase
     public function test_exhausted_explicit_overload_rejections_are_free(): void
     {
         $user = User::factory()->create(['balance_nanos' => 1_000_000_000, 'reserved_nanos' => 90_000_000]);
-        $generation = Generation::factory()->for($user)->create();
+        $generation = Generation::factory()->for($user)->create(['submission_attempts' => 5]);
         Http::fake(['*/generations' => Http::response(['error' => ['message' => 'Overloaded.']], 503)]);
         $queueJob = \Mockery::mock(Job::class);
         $queueJob->shouldReceive('attempts')->andReturn(6);

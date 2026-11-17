@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\ProviderLimited;
 use App\Services\Pixelforge;
 use App\Services\ReportService;
 use Carbon\CarbonImmutable;
@@ -28,6 +29,8 @@ class ReportController extends Controller
         $error = null;
         try {
             $report = $reports->build($start, $end, $provider);
+        } catch (ProviderLimited $exception) {
+            $error = $exception->getMessage().' Try again in '.$exception->retryAfter.' seconds.';
         } catch (ConnectionException|RequestException $exception) {
             report($exception);
             $error = 'Provider usage is unavailable. Try again shortly.';

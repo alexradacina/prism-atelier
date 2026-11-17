@@ -1126,6 +1126,13 @@ legend {
     margin-top: 10px;
     overflow-wrap: anywhere;
 }
+
+.generation-notice {
+    margin: 12px 0;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.6;
+}
 .collection-toolbar {
     display: flex;
     justify-content: space-between;

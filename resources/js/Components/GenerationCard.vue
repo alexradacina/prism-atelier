@@ -71,6 +71,9 @@ const unavailable = ref(false);
             <p v-if="generation.error" class="generation-error">
                 {{ generation.error }}
             </p>
+            <p v-else-if="generation.notice" class="generation-notice" role="status">
+                {{ generation.notice }}
+            </p>
             <div class="generation-costs">
                 <div>
                     <span>Estimated</span

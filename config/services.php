@@ -5,6 +5,7 @@ return [
         'url' => env('PIXELFORGE_URL', 'https://pixelforge.promptedit.dev/v1/'),
         'key' => env('PIXELFORGE_API_KEY'),
         'webhook_secret' => env('PIXELFORGE_WEBHOOK_SECRET'),
+        'account_scope' => env('PIXELFORGE_ACCOUNT_SCOPE', 'primary'),
     ],
 
     /*

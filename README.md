@@ -84,6 +84,7 @@ When moving an existing SQLite installation, preserve the original database and 
 - Append-only balance history with exact running balances, separate pending holds and an operator view for every user.
 - Operator reports by UTC completion day, user, and day within each user, with provider usage reconciliation.
 - Redis-backed cache/queues and an operator-only Horizon dashboard with job metrics.
+- Account-wide request, concurrency and UTC daily quotas, shared across users and queue workers.
 
 ## Billing decisions
 
@@ -119,7 +120,7 @@ Signatures use HMAC-SHA256 over `timestamp.raw_body`, checked in constant time w
 
 Processing locks the event and settles in the same database transaction. A retried processing event cannot undo success or failure. An early webhook can match the pre-existing local generation via its metadata even before the create response has returned. The scheduled reconciler also retries unprocessed inbox records if queuing was interrupted after commit.
 
-Polling starts after submission and repeats every 15 seconds until terminal. The scheduler recovers stalled polling and fresh submissions whose post-commit dispatch was interrupted. Unique submit jobs prevent competing retries of the same request. Transient failures use bounded retries, backoff and `Retry-After`. All create attempts reuse the original idempotency key and immutable parameters.
+Polling starts after submission and repeats every 15 seconds until terminal. The scheduler recovers stalled polling and fresh submissions whose post-commit dispatch was interrupted. Unique submit jobs prevent competing retries of the same request. All create attempts reuse the original idempotency key and immutable parameters.
 
 If all submission attempts fail with an ambiguous connection error, the app retains the reservation rather than assuming no provider charge exists. An operator can safely retry:
 
@@ -129,9 +130,21 @@ php artisan queue:failed
 php artisan horizon:retry all
 ```
 
-This explicit retry is bounded again. Known 4xx rejections, or exhausted explicit 429/503 responses, release the reservation and mark the request failed. Scheduler recovery for already accepted generations remains active.
+This explicit retry resets the six-request budget only for stopped, unconfirmed submissions. Known rejections release the reservation only when **every** preceding attempt was also definitively rejected. A timeout followed by a 401, 429 or 503 cannot prove that the earlier request created nothing; those holds and provider slots remain reserved until an idempotent replay, webhook or operator investigation resolves them. A late success then follows the normal, exactly-once settlement path. Scheduler recovery for already accepted generations remains active.
 
 Images remain on Pixelforge; signed URLs expire after 24 hours. The UI handles expired/unavailable images without deleting their billing history.
+
+## Provider limits
+
+Pixelforge limits the **account**, across all API keys: 60 authenticated requests per minute, three queued/processing generations, and 500 accepted generations per UTC day. Horizon's worker count is independent of those limits.
+
+Every authenticated HTTP call passes through a database coordinator. A locked `provider_accounts` row records a rolling 60-second request window and server feedback. Submissions, status checks, usage reports and retries share that allowance. `X-RateLimit-Limit` and `X-RateLimit-Remaining` can reduce it; exhausted server allowance conservatively waits 60 seconds from observation. A 429 or 503 `Retry-After` pauses the account's other workers too. Public `GET /pricing` sends no credentials and is cached separately.
+
+Before a create request leaves the app, the same transaction reserves a provider slot and increments a durable HTTP-attempt counter. Known rejections release that slot; accepted jobs hold it until a terminal result. Unconfirmed submissions also retain slots. Daily admission counts the provider's `created_at` UTC day, including accepted failures, plus unresolved slot reservations. Definitively rejected requests consume only request allowance. The 501st admission waits until UTC midnight; a provider `daily_limit_exceeded` response also pauses new creates until then, while existing generations can still be polled.
+
+Actual create requests are limited to six attempts with increasing backoff (5, 15, 30, 60, 120 seconds), or longer when `Retry-After` requires it. Queue releases while waiting for quota do **not** consume this budget. Persisted submission and polling cooldowns prevent a new queue job or the scheduler from bypassing a delay. Stored request times and cooldown deadlines round up to whole seconds so timestamp precision cannot shorten a limit. Poll failures use five attempts per cycle, then leave a five-minute cooldown before scheduled recovery. Waiting messages appear on generation cards; holds remain separate from completed spending. Exhausted, ambiguous submissions appear as failed jobs in Horizon and retain their holds for explicit reconciliation.
+
+`PIXELFORGE_ACCOUNT_SCOPE=primary` identifies the provider account, **not** the API key. Workers and deployments using keys from that same account must share the coordinator database and scope. Use a different scope for a genuinely different account; never rotate the scope to evade a quota. Requests made outside this coordinator cannot be known in advance: provider headers and 429 responses remain authoritative and are honored. For predictable admission, route all use of an account through this coordinator, or use separate provider accounts for independent environments. Keep separate environment API keys for webhook secrets and usage reporting.
 
 ## Operator reports
 
@@ -163,9 +176,9 @@ npm test
 npm run build
 ```
 
-MySQL/PostgreSQL race tests start six independent processes at the same time. They verify that distinct requests cannot reserve the same money, replayed submissions create one hold, and simultaneous terminal updates create one charge. SQLite skips these three row-lock tests; the ordinary functional suite still runs there. These tests run only against the isolated CI/test database.
+MySQL/PostgreSQL race tests start six independent processes at the same time. They verify that distinct requests cannot reserve the same money, replayed submissions create one hold, simultaneous terminal updates create one charge, and workers cannot overbook provider slots, request allowance or daily allowance. SQLite skips these six row-lock tests; the ordinary functional suite still runs there. These tests run only against the isolated CI/test database.
 
-The tests isolate all provider HTTP requests and cover money precision and Unicode, mutable pricing, quote expiry and ownership, credit reservations, idempotent purchases/submissions, success/failure settlement, forged/stale signatures, repeated and out-of-order webhooks, early webhooks, polling recovery, retry headers, auth isolation and usage reconciliation.
+The tests isolate all provider HTTP requests and cover money precision and Unicode, mutable pricing, quote expiry and ownership, credit reservations, idempotent purchases/submissions, success/failure settlement, forged/stale signatures, repeated and out-of-order webhooks, early webhooks, polling recovery, account-wide quotas, UTC midnight, bounded retries, cross-job cooldowns, lost responses followed by rejection, auth isolation and usage reconciliation.
 
 GitHub Actions runs the suite against SQLite, MySQL and PostgreSQL with Redis available, builds the frontend and checks Composer metadata. Unit/feature tests use an array cache, synchronous queue and isolated test database, so running `php artisan test` does not modify your local MySQL app data or Redis jobs. Local end-to-end verification also exercised a real Pixelforge success and failure and matched provider usage to the nanodollar. Live dashboard webhook delivery needs a configured tunnel and signing secret; signed receiver behavior is covered by automated tests.
 

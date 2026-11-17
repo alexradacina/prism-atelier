@@ -50,6 +50,7 @@ class GenerationService
                 'id' => $quoteId, 'user_id' => $user->id, ...$quote['parameters'],
                 'quoted_pricing' => $quote['pricing'], 'estimated_nanos' => $quote['estimated_nanos'],
                 'reserved_nanos' => $quote['maximum_nanos'], 'status' => 'queued',
+                'provider_account' => config('services.pixelforge.account_scope'),
             ]);
             SubmitGeneration::dispatch($generation->id)->afterCommit();
 
@@ -97,6 +98,11 @@ class GenerationService
                 return;
             }
             $locked->provider_id = $object['id'];
+            $locked->provider_created_at = $object['created_at'] ?? $locked->provider_created_at ?? $locked->created_at;
+            $locked->submission_uncertain = false;
+            $locked->provider_slot = ! in_array($object['status'], ['succeeded', 'failed'], true);
+            $locked->waiting_message = null;
+            $locked->submission_retry_at = null;
             $locked->synced_at = now();
             $locked->rates = $object['rates'];
             if ($locked->status === 'processing' && $object['status'] === 'queued') {
@@ -135,7 +141,7 @@ class GenerationService
         DB::transaction(function () use ($generation, $message) {
             $user = User::query()->lockForUpdate()->findOrFail($generation->user_id);
             $locked = Generation::query()->lockForUpdate()->findOrFail($generation->id);
-            if ($locked->terminal() || $locked->provider_id !== null) {
+            if ($locked->terminal() || $locked->provider_id !== null || $locked->submission_uncertain) {
                 return;
             }
             $user->decrement('reserved_nanos', $locked->reserved_nanos);
@@ -148,6 +154,7 @@ class GenerationService
                 'status' => 'failed', 'error_message' => $message,
                 'reserved_nanos' => 0, 'actual_nanos' => 0, 'provider_nanos' => 0,
                 'completed_at' => now(), 'settled_at' => now(),
+                'provider_slot' => false, 'waiting_message' => null, 'submission_retry_at' => null,
             ]);
         }, 5);
     }

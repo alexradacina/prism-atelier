@@ -2,10 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Exceptions\ProviderLimited;
 use App\Models\Generation;
 use App\Models\LedgerEntry;
 use App\Models\User;
 use App\Services\GenerationService;
+use App\Services\ProviderLimits;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
@@ -163,7 +165,64 @@ class WalletConcurrencyTest extends TestCase
         $this->assertSame(1, LedgerEntry::where('generation_id', $generation->id)->count());
         $this->assertSame(618_112_500, $user->fresh()->balance_nanos);
         $this->assertSame(0, $user->fresh()->reserved_nanos);
-        $this->assertSame(618_112_500,LedgerEntry::where('generation_id',$generation->id)->first()->balance_after_nanos);
-        $this->assertSame('succeeded',$generation->fresh()->status);
+        $this->assertSame(618_112_500, LedgerEntry::where('generation_id', $generation->id)->first()->balance_after_nanos);
+        $this->assertSame('succeeded', $generation->fresh()->status);
+    }
+
+    public function test_parallel_workers_cannot_claim_more_than_three_provider_slots(): void
+    {
+        $this->requireConcurrentDatabase();
+        $generations = Generation::factory()->count(6)->create();
+        $results = $this->race(function (int $index) use ($generations): array {
+            try {
+                app(ProviderLimits::class)->acquire(Generation::findOrFail($generations[$index]->id));
+
+                return ['result' => 'admitted'];
+            } catch (ProviderLimited) {
+                return ['result' => 'waiting'];
+            }
+        });
+        $this->assertCount(3, array_filter($results, fn ($result) => $result['result'] === 'admitted'), json_encode($results));
+        $this->assertCount(3, array_filter($results, fn ($result) => $result['result'] === 'waiting'));
+        $this->assertSame(3, Generation::where('provider_slot', true)->count());
+        $this->assertSame(3, (int) Generation::sum('submission_attempts'));
+    }
+
+    public function test_parallel_workers_cannot_exceed_the_shared_request_allowance(): void
+    {
+        $this->requireConcurrentDatabase();
+        DB::table('provider_accounts')->insert(['scope' => 'primary', 'request_timestamps' => json_encode(array_fill(0, 59, now()->timestamp))]);
+        $results = $this->race(function (int $index): array {
+            try {
+                app(ProviderLimits::class)->acquire();
+
+                return ['result' => 'admitted'];
+            } catch (ProviderLimited) {
+                return ['result' => 'waiting'];
+            }
+        });
+        $this->assertCount(1, array_filter($results, fn ($result) => $result['result'] === 'admitted'), json_encode($results));
+        $this->assertCount(5, array_filter($results, fn ($result) => $result['result'] === 'waiting'), json_encode($results));
+        $this->assertCount(60, json_decode(DB::table('provider_accounts')->value('request_timestamps'), true));
+    }
+
+    public function test_parallel_workers_cannot_exceed_the_utc_daily_allowance(): void
+    {
+        $this->requireConcurrentDatabase();
+        $user = User::factory()->create();
+        Generation::factory()->count(499)->for($user)->create(['status' => 'failed', 'provider_created_at' => now('UTC')]);
+        $generations = Generation::factory()->count(6)->for($user)->create();
+        $results = $this->race(function (int $index) use ($generations): array {
+            try {
+                app(ProviderLimits::class)->acquire(Generation::findOrFail($generations[$index]->id));
+
+                return ['result' => 'admitted'];
+            } catch (ProviderLimited) {
+                return ['result' => 'waiting'];
+            }
+        });
+        $this->assertCount(1, array_filter($results, fn ($result) => $result['result'] === 'admitted'), json_encode($results));
+        $this->assertCount(5, array_filter($results, fn ($result) => $result['result'] === 'waiting'), json_encode($results));
+        $this->assertSame(1, Generation::where('provider_slot', true)->count());
     }
 }

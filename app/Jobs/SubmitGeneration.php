@@ -2,12 +2,15 @@
 
 namespace App\Jobs;
 
+use App\Exceptions\ProviderLimited;
 use App\Models\Generation;
 use App\Services\GenerationService;
 use App\Services\Pixelforge;
+use App\Services\ProviderLimits;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 
@@ -15,11 +18,13 @@ class SubmitGeneration implements ShouldBeUnique, ShouldQueue
 {
     use Queueable;
 
-    public int $tries = 6;
+    public int $tries = 0;
+
+    public int $maxExceptions = 6;
 
     public int $timeout = 25;
 
-    public int $uniqueFor = 900;
+    public int $uniqueFor = 172800;
 
     public function __construct(public string $generationId) {}
 
@@ -44,22 +49,38 @@ class SubmitGeneration implements ShouldBeUnique, ShouldQueue
         if ($generation->terminal() || $generation->provider_id !== null) {
             return;
         }
+        if ($generation->submission_attempts >= ProviderLimits::MAX_SUBMISSION_ATTEMPTS) {
+            $this->finishRetries($generation, $service, 'The image service could not accept this request. You were not charged.');
+
+            return;
+        }
         try {
             $object = $provider->submit($generation);
+        } catch (ProviderLimited $exception) {
+            $generation->update(['waiting_message' => $exception->getMessage(), 'submission_retry_at' => now()->addSeconds($exception->retryAfter)->ceilSecond()]);
+            $this->release($exception->retryAfter);
+
+            return;
         } catch (RequestException $exception) {
+            $generation->refresh();
             $status = $exception->response->status();
-            if (($status >= 400 && $status < 500 && $status !== 429) || (in_array($status, [429, 503], true) && $this->attempts() >= $this->tries)) {
-                $service->reject($generation, $exception->response->json('error.message') ?? 'The provider rejected this request. You were not charged.');
+            if (in_array($status, [400, 401, 404, 409, 422], true) || $generation->submission_attempts >= ProviderLimits::MAX_SUBMISSION_ATTEMPTS) {
+                $this->finishRetries($generation, $service, $exception->response->json('error.message') ?? 'The image service rejected this request. You were not charged.');
 
                 return;
             }
-            if (in_array($status, [429, 503], true)) {
-                $delay = max((int) $exception->response->header('Retry-After', 5), $this->backoff()[max(0, min($this->attempts() - 1, 4))]);
-                $this->release($delay);
+            $this->retryLater($generation, (int) $exception->response->header('Retry-After', 0));
 
-                return;
+            return;
+        } catch (ConnectionException $exception) {
+            $generation->refresh();
+            if ($generation->submission_attempts >= ProviderLimits::MAX_SUBMISSION_ATTEMPTS) {
+                $this->finishRetries($generation, $service, 'The image service could not accept this request. You were not charged.');
+            } else {
+                $this->retryLater($generation);
             }
-            throw $exception;
+
+            return;
         }
         $service->apply($generation, $object);
         if (! $generation->fresh()->terminal()) {
@@ -67,9 +88,26 @@ class SubmitGeneration implements ShouldBeUnique, ShouldQueue
         }
     }
 
+    private function retryLater(Generation $generation, int $retryAfter = 0): void
+    {
+        $delay = max($retryAfter, $this->backoff()[max(0, min($generation->submission_attempts - 1, 4))]);
+        $generation->update(['submission_retry_at' => now()->addSeconds($delay)->ceilSecond(), 'waiting_message' => 'The image service is busy. Your request will retry automatically.']);
+        $this->release($delay);
+    }
+
+    private function finishRetries(Generation $generation, GenerationService $service, string $message): void
+    {
+        if ($generation->fresh()->submission_uncertain) {
+            $this->failed(null);
+            $this->fail(new \RuntimeException('Submission remains unconfirmed after bounded retries; operator reconciliation is required.'));
+        } else {
+            $service->reject($generation, $message);
+        }
+    }
+
     public function failed(?\Throwable $exception): void
     {
         Generation::whereKey($this->generationId)->whereNull('provider_id')->whereIn('status', ['queued', 'processing'])
-            ->update(['error_message' => 'Submission could not be confirmed. Credits remain reserved while an operator safely retries the request.']);
+            ->update(['error_message' => 'Submission could not be confirmed. Credits remain reserved while an operator safely retries the request.', 'waiting_message' => null]);
     }
 }
