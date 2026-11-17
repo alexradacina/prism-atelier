@@ -134,7 +134,7 @@ function submit() {
                     <span>◈</span>
                     <p>
                         This is a demo workspace. Credits are in US dollars,
-                        purchases are simulated, and Pixelforge produces
+                        purchases are simulated, and the studio produces
                         placeholder images.
                     </p>
                 </div>

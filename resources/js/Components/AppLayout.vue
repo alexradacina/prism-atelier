@@ -54,7 +54,7 @@ const active = (path) => page.url.split("?")[0] === path;
                 <div class="atelier-note">
                     <span class="tiny-spark">✧</span>
                     <p>A space for your<br />next bright idea.</p>
-                    <span class="eyebrow">POWERED BY PIXELFORGE</span>
+                    <span class="eyebrow">WORDS INTO WORLDS</span>
                 </div>
                 <div class="profile">
                     <span class="avatar">{{
@@ -103,7 +103,7 @@ const active = (path) => page.url.split("?")[0] === path;
                 ><span
                     >Make room for imagination.
                     <span class="footer-spark">✧</span></span
-                ><span>USD credits · Simulated provider</span>
+                ><span>USD credits · Demo workspace</span>
             </footer>
         </div>
     </div>

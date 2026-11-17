@@ -54,6 +54,30 @@ class StudioTest extends TestCase
         ])->assertUnprocessable()->assertJsonValidationErrors(['prompt', 'quality', 'size', 'reference_images.0']);
     }
 
+    public function test_quotes_show_only_customer_totals_from_current_api_pricing(): void
+    {
+        $pricing = $this->pricing();
+        $pricing['rates']['output_tokens'] = '80.00';
+        Http::fake(['*/pricing' => Http::response($pricing)]);
+        $this->actingAs(User::factory()->create())->postJson('/quotes', [
+            'prompt' => 'Hello', 'quality' => 'low', 'size' => '1024x1024',
+            'reference_images' => ['https://example.com/reference.jpg'],
+        ])->assertOk()->assertJsonStructure(['id', 'estimated_cost', 'maximum_cost', 'expires_at'])
+            ->assertJsonPath('estimated_cost', '0.041481250')
+            ->assertJsonPath('maximum_cost', '0.045393750')
+            ->assertJsonMissingPath('rates')->assertJsonMissingPath('pricing')
+            ->assertJsonMissingPath('provider_cost');
+    }
+
+    public function test_a_fifth_reference_image_is_rejected(): void
+    {
+        $this->actingAs(User::factory()->create())->postJson('/quotes', [
+            'prompt' => 'Hello', 'quality' => 'low', 'size' => '1024x1024',
+            'reference_images' => array_fill(0, 5, 'https://example.com/reference.jpg'),
+        ])->assertUnprocessable()->assertJsonValidationErrors('reference_images');
+        Http::assertNothingSent();
+    }
+
     public function test_credit_purchase_endpoint_is_idempotent_and_validates_amounts(): void
     {
         $user = User::factory()->create();

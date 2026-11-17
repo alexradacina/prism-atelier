@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { Link, useForm, usePage, usePoll } from "@inertiajs/vue3";
 import AppLayout from "../Components/AppLayout.vue";
 import ArtStudy from "../Components/ArtStudy.vue";
@@ -11,18 +11,23 @@ const form = useForm({ quote_id: "" });
 const prompt = ref("");
 const size = ref("1024x1024");
 const quality = ref("medium");
-const references = ref("");
-const showReferences = ref(false);
+const references = ref([]);
+let nextReferenceId = 0;
 const quote = ref(null);
 const quoting = ref(false);
 const quoteError = ref("");
 const now = ref(Date.now());
 const referenceImages = computed(() =>
-    references.value
-        .split("\n")
-        .map((url) => url.trim())
-        .filter(Boolean),
+    references.value.map((reference) => reference.url.trim()).filter(Boolean),
 );
+function addReference() {
+    if (references.value.length >= 4) return;
+    const reference = { id: nextReferenceId++, url: "" };
+    references.value.push(reference);
+    nextTick(() =>
+        document.getElementById(`reference-${reference.id}`)?.focus(),
+    );
+}
 const validQuote = computed(
     () => quote.value && Date.parse(quote.value.expires_at) > now.value,
 );
@@ -82,7 +87,7 @@ async function estimate() {
         if (current === requestNumber) quoting.value = false;
     }
 }
-watch([prompt, size, quality, references], () => {
+watch([prompt, size, quality, referenceImages], () => {
     quote.value = null;
     quoteError.value = "";
     clearTimeout(timer);
@@ -257,32 +262,51 @@ const ideas = [
                     </div>
                 </fieldset>
                 <div class="reference-section">
-                    <button
-                        class="reference-toggle"
-                        type="button"
-                        @click="showReferences = !showReferences"
-                        :aria-expanded="showReferences"
-                    >
-                        <span>⊕</span> Add reference images
-                        <span class="muted">Optional · up to 4 URLs</span
-                        ><span class="reference-chevron">{{
-                            showReferences ? "−" : "+"
-                        }}</span>
-                    </button>
-                    <div v-if="showReferences" class="reference-input">
-                        <label for="references"
-                            >One public image URL per line</label
-                        ><textarea
-                            id="references"
-                            v-model="references"
-                            rows="3"
-                            placeholder="https://example.com/reference.jpg"
-                        ></textarea
-                        ><small
-                            >Each reference adds input image tokens to the
-                            price.</small
-                        >
+                    <div class="reference-heading">
+                        <h3>Reference images <span>Optional</span></h3>
+                        <span>{{ references.length }} / 4</span>
                     </div>
+                    <p id="reference-help" class="reference-help">
+                        Add a public image URL to guide your creation. Your
+                        estimate updates automatically.
+                    </p>
+                    <div
+                        v-for="(reference, index) in references"
+                        :key="reference.id"
+                        class="reference-field"
+                    >
+                        <label :for="`reference-${reference.id}`"
+                            >Reference image {{ index + 1 }} URL</label
+                        >
+                        <div class="reference-field-controls">
+                            <input
+                                :id="`reference-${reference.id}`"
+                                v-model="reference.url"
+                                type="url"
+                                inputmode="url"
+                                maxlength="2048"
+                                placeholder="https://example.com/reference.jpg"
+                                aria-describedby="reference-help"
+                                @keydown.enter.prevent
+                            />
+                            <button
+                                type="button"
+                                class="remove-reference"
+                                :aria-label="`Remove reference image ${index + 1}`"
+                                @click="references.splice(index, 1)"
+                            >
+                                <span aria-hidden="true">×</span>
+                            </button>
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        class="add-reference"
+                        :disabled="references.length >= 4"
+                        @click="addReference"
+                    >
+                        <span aria-hidden="true">+</span> Add reference image
+                    </button>
                 </div>
                 <p v-if="form.errors.quote_id" class="field-error" role="alert">
                     {{ form.errors.quote_id }}
@@ -319,12 +343,12 @@ const ideas = [
                         <span v-if="quote && !quoting">USD</span>
                     </div>
                     <p class="quote-description">
-                        Includes Pixelforge’s cost + 25%. The final price
-                        depends on the tokens used.
+                        Your estimated total, with everything included. You’ll
+                        only be charged the final cost when your image is ready.
                     </p>
                     <div v-if="quote" class="quote-breakdown">
                         <div>
-                            <span>Reserve at current rates</span
+                            <span>Amount reserved</span
                             ><strong :title="money(quote.maximum_cost, true)">{{
                                 money(quote.maximum_cost)
                             }}</strong>

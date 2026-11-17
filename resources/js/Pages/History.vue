@@ -71,9 +71,8 @@ usePoll(4000, { only: ["generations", "auth"] });
         </div>
         <Pagination :data="generations" />
         <p class="page-footnote">
-            Estimates include a 25% markup. Actual costs are settled once, on
-            completion. Images are hosted by Pixelforge and links expire after
-            24 hours.
+            All prices include everything. Your final cost is charged when the
+            image is ready. Image links expire after 24 hours.
         </p>
     </AppLayout>
 </template>

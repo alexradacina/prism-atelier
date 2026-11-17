@@ -39,7 +39,7 @@ const unavailable = ref(false);
                 }}</strong>
                 <span>{{
                     unavailable
-                        ? "Pixelforge links last 24 hours."
+                        ? "Image links last 24 hours."
                         : generation.status === "failed"
                           ? "No credits were charged."
                           : generation.status === "succeeded"
