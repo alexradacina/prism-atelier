@@ -23,7 +23,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        DevCommands::artisan('queue:listen --sleep=1 --timeout=30 --tries=6', 'queue');
+        DevCommands::artisan('horizon:listen', 'queue');
         DevCommands::artisan('schedule:work', 'scheduler');
         RateLimiter::for('sign-in', function (Request $request) {
             return [

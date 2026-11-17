@@ -4,13 +4,20 @@ An image generation studio built with Laravel 13, Vue 3 and Inertia 3. Pixelforg
 
 ## Run locally
 
-Requirements: PHP 8.4+ (8.5 recommended), Composer, SQLite, and the Node version in `.nvmrc`. Versions are locked in `composer.lock` and `package-lock.json`.
+Requirements: PHP 8.4+ (8.5 recommended) with PDO MySQL, PCNTL and POSIX, Composer, MySQL 8+, Redis 7+, and the Node version in `.nvmrc`. Versions are locked in `composer.lock` and `package-lock.json`. Redis uses the bundled Predis client, so the PhpRedis extension is optional.
+
+On macOS, start your installed services (for example, `brew services start mysql@8.0` and `brew services start redis`). Other installations can use their normal service manager. Create a dedicated database:
+
+```sh
+mysql -u root -e 'CREATE DATABASE IF NOT EXISTS prism_atelier CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;'
+```
+
+If MySQL requires a password, add `-p` to that command. Configure your own database user and password in `.env`; the example defaults to a local `root` account with no password.
 
 ```sh
 cp .env.example .env
 composer install
 php artisan key:generate
-touch database/database.sqlite
 php artisan migrate
 
 # Follow the repository's Node instruction, then select the stable project runtime:
@@ -21,7 +28,28 @@ npm ci
 npm run build
 ```
 
-Set `PIXELFORGE_API_KEY` in `.env`. Run:
+The example environment selects MySQL for application data and sessions, Redis for cache and queues, and Horizon for queue processing:
+
+```dotenv
+DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=prism_atelier
+DB_USERNAME=root
+DB_PASSWORD=
+SESSION_DRIVER=database
+QUEUE_CONNECTION=redis
+CACHE_STORE=redis
+REDIS_CLIENT=predis
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+REDIS_DB=0
+REDIS_CACHE_DB=1
+REDIS_PREFIX=prism-atelier-local-database-
+HORIZON_PREFIX=prism-atelier-local-horizon:
+```
+
+Set `PIXELFORGE_API_KEY` in `.env`, check the database credentials, and run:
 
 ```sh
 nvm use node
@@ -29,28 +57,32 @@ nvm use
 composer run dev
 ```
 
-Open [http://127.0.0.1:8000](http://127.0.0.1:8000), register, and use **Credits & activity → Buy credits**. Purchases and the provider are simulated; there are no real payments. New users start at $0. The development command starts Laravel, Vite, a queue listener and the scheduler.
+Open [http://127.0.0.1:8000](http://127.0.0.1:8000), register, and use **Credits & activity → Buy credits**. Purchases and the provider are simulated; there are no real payments. New users start at $0. The development command starts Laravel, Vite, `horizon:listen` and the scheduler. Horizon uses up to three Redis workers and restarts them on PHP/config changes. Its file watcher uses the Chokidar development dependency, so run `npm ci` before starting development.
 
 To run without Vite, build once and use separate terminals:
 
 ```sh
 php artisan serve --host=127.0.0.1 --port=8000
-php artisan queue:work --sleep=1 --timeout=30 --tries=6
+php artisan horizon
 php artisan schedule:work
 ```
 
-Keep the worker running: submissions, webhook processing and polling are queued. After PHP changes, restart a `queue:work` worker; the `composer run dev` listener reloads PHP between jobs.
+Keep Horizon running: submissions, webhook processing and polling are queued on Redis. Do not run a separate `queue:work` or `queue:listen` against the same queue. After PHP/config changes, stop and restart a manually started Horizon process; `horizon:listen` handles this automatically during development.
+
+When moving an existing SQLite installation, preserve the original database and copy accounts, generations, ledger entries and active sessions into a freshly migrated MySQL database. Verify row counts and wallet/billing totals before switching `.env`; changing `DB_CONNECTION` alone does not transfer records. Fresh checkouts start with an empty MySQL database.
 
 ## Features
 
 - Registration, session sign-in/out, password hashing, CSRF protection and sign-in throttling.
-- Prompt, three canvas sizes, three quality levels and up to four HTTP(S) reference URLs.
+- Prompt, three canvas sizes, three quality levels and up to four individual HTTP(S) reference URL fields.
+- Three inspiration suggestions sampled from nine ideas on each page load; they stay steady during editing and live updates.
 - Server-calculated estimates and current-rate maximum reservations before submission.
 - A private, paginated history with queued/processing/succeeded/failed status and automatic updates.
 - Durable signed webhook inbox with unique event IDs, atomic processing and terminal-state protection.
 - Polling and scheduled recovery when webhooks are unavailable or missed.
 - Exact final billing, idempotent demo credit purchases, and balance reservations.
 - Operator reports by UTC completion day, user, and day within each user, with provider usage reconciliation.
+- Redis-backed cache/queues and an operator-only Horizon dashboard with job metrics.
 
 ## Billing decisions
 
@@ -76,7 +108,7 @@ For local development, expose port 8000 with your preferred public tunnel and co
 https://YOUR-TUNNEL/webhooks/pixelforge
 ```
 
-Restart the queue worker after changing environment variables, then use Pixelforge's dashboard to send a test event or resend deliveries.
+Restart Horizon after changing environment variables, then use Pixelforge's dashboard to send a test event or resend deliveries.
 
 Signatures use HMAC-SHA256 over `timestamp.raw_body`, checked in constant time with a five-minute tolerance in either direction. The receiver persists the event under a unique primary key, enqueues processing after commit and returns 204. Repeated delivery preserves the original event record.
 
@@ -89,7 +121,7 @@ If all submission attempts fail with an ambiguous connection error, the app reta
 ```sh
 php artisan prism:reconcile --retry-submissions
 php artisan queue:failed
-php artisan queue:retry all
+php artisan horizon:retry all
 ```
 
 This explicit retry is bounded again. Known 4xx rejections, or exhausted explicit 429/503 responses, release the reservation and mark the request failed. Scheduler recovery for already accepted generations remains active.
@@ -108,6 +140,10 @@ php artisan prism:admin your@email.com --revoke
 
 Visit `/admin/reports`. Ordinary users receive HTTP 403. Registration cannot grant admin access.
 
+The same operators can open **Queue monitor** in the sidebar or visit `/horizon`. The dashboard and its API require sign-in and operator access in every environment, including `local`. Horizon records job throughput, runtime, pending work and failures; the scheduler takes a metrics snapshot every five minutes. The supervisor timeout is 30 seconds, above the generation jobs' 25-second timeout and below Redis's 90-second `retry_after`.
+
+Use `php artisan horizon:status` to check the supervisor and `php artisan horizon:retry all` to retry failed jobs. In production, run Horizon under a process monitor; after deployments, `php artisan horizon:terminate` exits gracefully so the monitor starts the new code.
+
 Reports use the provider's **UTC completion day**, not submission day. Daily and total provider-cost columns come directly from `GET /v1/usage` for the configured API key; user attribution comes from local generation snapshots. The report displays an exact reconciliation delta instead of silently treating missing attribution as zero cost. Usage responses are cached for 30 seconds, so recent completions may temporarily show a difference.
 
 Use a separate API key per environment. If an API key is also used outside this application, those provider costs appear in the total and reconciliation delta, without inventing a user to charge.
@@ -121,14 +157,14 @@ npm run build
 
 The tests isolate all provider HTTP requests and cover money precision and Unicode, mutable pricing, quote expiry and ownership, credit reservations, idempotent purchases/submissions, success/failure settlement, forged/stale signatures, repeated and out-of-order webhooks, early webhooks, polling recovery, retry headers, auth isolation and usage reconciliation.
 
-GitHub Actions runs the suite against SQLite and PostgreSQL, builds the frontend and checks Composer metadata. Local end-to-end verification also exercised a real Pixelforge success and failure and matched provider usage to the nanodollar. Live dashboard webhook delivery needs a configured tunnel and signing secret; signed receiver behavior is covered by automated tests.
+GitHub Actions runs the suite against SQLite, MySQL and PostgreSQL with Redis available, builds the frontend and checks Composer metadata. Unit/feature tests use an array cache, synchronous queue and isolated test database, so running `php artisan test` does not modify your local MySQL app data or Redis jobs. Local end-to-end verification also exercised a real Pixelforge success and failure and matched provider usage to the nanodollar. Live dashboard webhook delivery needs a configured tunnel and signing secret; signed receiver behavior is covered by automated tests.
 
 ## Deploy manually on Laravel Forge
 
 No public deployment is performed by this project; deployment is intentionally left to the operator.
 
-1. Create a Laravel site from this repository's `main` branch. Use PHP 8.5, the Node runtime from `.nvmrc`, and a persistent PostgreSQL database (recommended) or MySQL. Set the web root to `public`.
-2. Set production environment values: `APP_ENV=production`, `APP_DEBUG=false`, `APP_URL=https://your-domain`, a persistent generated `APP_KEY`, database credentials, `SESSION_SECURE_COOKIE=true`, and a separate production `PIXELFORGE_API_KEY` / `PIXELFORGE_WEBHOOK_SECRET`. Keep database-backed sessions, queues and cache unless you intentionally configure shared Redis.
+1. Create a Laravel site from this repository's `main` branch. Use PHP 8.5, the Node runtime from `.nvmrc`, and persistent MySQL and Redis services. Set the web root to `public`.
+2. Set production environment values: `APP_ENV=production`, `APP_DEBUG=false`, `APP_URL=https://your-domain`, a persistent generated `APP_KEY`, database credentials, `SESSION_SECURE_COOKIE=true`, and a separate production `PIXELFORGE_API_KEY` / `PIXELFORGE_WEBHOOK_SECRET`. Use `DB_CONNECTION=mysql`, `SESSION_DRIVER=database`, `QUEUE_CONNECTION=redis`, `CACHE_STORE=redis` and `REDIS_CLIENT=predis`. Set production-specific `REDIS_PREFIX` and `HORIZON_PREFIX` values instead of the example local prefixes. Configure Redis host/password/TLS as required by your host.
 3. Adapt the site's deployment script to the commands below, retaining Forge's checkout, release-activation and PHP-FPM handling. Do not regenerate `APP_KEY` on each deployment.
 
 ```sh
@@ -137,11 +173,11 @@ npm ci
 npm run build
 php artisan migrate --force
 php artisan optimize
-php artisan queue:restart
+php artisan horizon:terminate
 ```
 
-4. Add a Forge queue worker for the database connection/default queue: `php artisan queue:work --sleep=1 --timeout=30 --tries=6`. Keep `retry_after` above the job timeout (the default 90 seconds is sufficient). Configure graceful worker restarts after deployment.
-5. Enable the Laravel scheduler, running `php artisan schedule:run` every minute. The scheduled `prism:reconcile` task recovers stalled updates.
+4. Add a Forge background process or Supervisor entry running `php artisan horizon` in the site directory, with automatic restart enabled. Do not also start an ordinary queue worker. Keep Redis `retry_after` above the Horizon supervisor timeout (90 seconds vs 30 seconds by default), and allow at least 60 seconds for graceful shutdown.
+5. Enable the Laravel scheduler, running `php artisan schedule:run` every minute. The scheduled `prism:reconcile` task recovers stalled updates; `horizon:snapshot` records dashboard metrics every five minutes.
 6. Configure this environment's Pixelforge webhook URL as `https://your-domain/webhooks/pixelforge` and copy that key's secret into Forge. Send a test event; check for HTTP 204 and a processed inbox record.
 7. Register the operator account and run `prism:admin`. Exercise `[succeed] [duplicate]` and `[fail]` prompts, then verify the admin report delta is zero. The health endpoint is `/up`.
 

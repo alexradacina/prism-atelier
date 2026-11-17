@@ -11,9 +11,37 @@ jobs:
         include:
           - connection: sqlite
             database: ":memory:"
+            port: 5432
           - connection: pgsql
             database: prism_testing
+            port: 5432
+          - connection: mysql
+            database: prism_testing
+            port: 3306
     services:
+      mysql:
+        image: mysql:latest
+        env:
+          MYSQL_DATABASE: prism_testing
+          MYSQL_USER: prism
+          MYSQL_PASSWORD: testing
+          MYSQL_ROOT_PASSWORD: testing-root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -ptesting-root --silent"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:latest
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
       postgres:
         image: postgres:latest
         env:
@@ -32,15 +60,17 @@ jobs:
       DB_CONNECTION: ${{ matrix.connection }}
       DB_DATABASE: ${{ matrix.database }}
       DB_HOST: 127.0.0.1
-      DB_PORT: 5432
+      DB_PORT: ${{ matrix.port }}
       DB_USERNAME: prism
       DB_PASSWORD: testing
+      REDIS_CLIENT: predis
+      REDIS_HOST: 127.0.0.1
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: shivammathur/setup-php@v2
         with:
           php-version: "8.5"
-          extensions: mbstring, pdo_sqlite, pdo_pgsql
+          extensions: mbstring, pdo_sqlite, pdo_pgsql, pdo_mysql, pcntl, posix
           coverage: none
       - uses: actions/setup-node@v7.1.0
         with:

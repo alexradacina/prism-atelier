@@ -122,7 +122,40 @@ const ideas = [
         title: "Something surreal",
         prompt: "A floating spiral staircase made of pale pink stone above a calm blue sea, surreal architectural photography [succeed]",
     },
+    {
+        title: "A cosy corner",
+        prompt: "A quiet reading corner with a moss-green armchair, warm lamplight and rain on the window, inviting interior photography [succeed]",
+    },
+    {
+        title: "A vintage escape",
+        prompt: "A vintage travel poster of a sunlit Mediterranean seaside town, terracotta rooftops, deep blue water and a warm limited colour palette [succeed]",
+    },
+    {
+        title: "Up close with nature",
+        prompt: "An intimate macro photograph of a fern unfurling, tiny dew drops and soft morning light, rich natural greens [succeed]",
+    },
+    {
+        title: "Made of paper",
+        prompt: "A layered paper-cut landscape of rolling hills and a rising sun, handmade textures, warm ochre and muted blue tones [succeed]",
+    },
+    {
+        title: "A tiny world",
+        prompt: "A miniature bookshop inside a walnut shell, tiny glowing windows and shelves of books, charming handcrafted diorama photography [succeed]",
+    },
+    {
+        title: "After the rain",
+        prompt: "A quiet city street after the rain, glowing shop windows reflected in the pavement, cinematic night photography with soft amber and teal light [succeed]",
+    },
 ];
+const shuffledIdeas = [...ideas];
+for (let index = shuffledIdeas.length - 1; index > 0; index--) {
+    const randomIndex = Math.floor(Math.random() * (index + 1));
+    [shuffledIdeas[index], shuffledIdeas[randomIndex]] = [
+        shuffledIdeas[randomIndex],
+        shuffledIdeas[index],
+    ];
+}
+const visibleIdeas = shuffledIdeas.slice(0, 3);
 </script>
 <template>
     <AppLayout title="Image studio">
@@ -158,7 +191,7 @@ const ideas = [
                 <div class="idea-row">
                     <span>A little inspiration</span
                     ><button
-                        v-for="idea in ideas"
+                        v-for="idea in visibleIdeas"
                         :key="idea.title"
                         type="button"
                         @click="prompt = idea.prompt"

@@ -38,3 +38,4 @@ Artisan::command('prism:reconcile {--retry-submissions : Safely retry unconfirme
     $this->info('Reconciliation jobs queued.');
 })->purpose('Recover missed webhooks and stalled polling');
 Schedule::command('prism:reconcile')->everyMinute()->withoutOverlapping();
+Schedule::command('horizon:snapshot')->everyFiveMinutes()->withoutOverlapping();

@@ -47,8 +47,16 @@ const active = (path) => page.url.split("?")[0] === path;
                             { active: active('/admin/reports') },
                         ]"
                         ><span class="nav-icon">▤</span> Spend report</Link
-                    ></template
-                >
+                    >
+                    <a
+                        href="/horizon"
+                        class="nav-link"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        ><span class="nav-icon">◷</span> Queue monitor
+                        <span class="nav-arrow">↗</span></a
+                    >
+                </template>
             </nav>
             <div class="sidebar-bottom">
                 <div class="atelier-note">
