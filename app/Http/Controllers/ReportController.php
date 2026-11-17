@@ -9,6 +9,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -23,8 +24,14 @@ class ReportController extends Controller
         ]);
         $start = $data['start_date'] ?? now()->subDays(29)->toDateString();
         $end = $data['end_date'] ?? now()->toDateString();
-        abort_if(CarbonImmutable::parse($start)->diffInDays($end, false) < 0 ||
-            CarbonImmutable::parse($start)->diffInDays($end) > 91, 422, 'Choose a range of at most 92 UTC days.');
+        $days = CarbonImmutable::parse($start)->diffInDays($end, false);
+        if ($days < 0 || $days > 91) {
+            throw ValidationException::withMessages([
+                'end_date' => $days < 0
+                    ? 'The end date must be on or after the start date.'
+                    : 'Choose a range of at most 92 UTC days.',
+            ])->redirectTo(route('admin.reports'));
+        }
         $report = null;
         $error = null;
         try {

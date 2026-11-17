@@ -117,4 +117,28 @@ class StudioTest extends TestCase
         $this->assertSame('0.123456789', $report['total']['difference']);
         $this->assertSame('-0.123456789', $report['total']['profit']);
     }
+
+    public function test_report_rejects_a_93_day_range_with_an_inline_error_before_fetching_usage(): void
+    {
+        Http::fake();
+        $user = User::factory()->create(['is_admin' => true]);
+
+        $this->actingAs($user)->get('/admin/reports?start_date=2026-01-01&end_date=2026-04-03')
+            ->assertRedirect(route('admin.reports'))
+            ->assertSessionHasErrors(['end_date' => 'Choose a range of at most 92 UTC days.']);
+
+        Http::assertNothingSent();
+    }
+
+    public function test_report_accepts_the_inclusive_92_day_boundary(): void
+    {
+        Http::fake(['*/usage*' => Http::response([
+            'data' => [], 'total' => ['cost_usd' => '0.000000000'],
+        ])]);
+        $user = User::factory()->create(['is_admin' => true]);
+
+        $this->actingAs($user)->get('/admin/reports?start_date=2026-01-01&end_date=2026-04-02')
+            ->assertOk()->assertSessionHasNoErrors();
+        Http::assertSentCount(1);
+    }
 }
