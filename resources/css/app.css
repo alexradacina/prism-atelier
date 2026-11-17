@@ -2690,3 +2690,16 @@ tr:last-child td {
         font-size: 23px;
     }
 }
+@media (max-width: 1000px) {
+    .report-stats {
+        grid-template-columns: 1fr;
+    }
+    .report-stats > div {
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+    }
+    .report-stats strong {
+        white-space: nowrap;
+        font-size: 32px;
+    }
+}
