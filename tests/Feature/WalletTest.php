@@ -19,6 +19,21 @@ class WalletTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_balance_trend_is_private_chronological_and_independent_of_ledger_pagination(): void
+    {
+        $user = User::factory()->create();
+        $other = $this->funded();
+        $service = app(GenerationService::class);
+        for ($index = 1; $index <= 35; $index++) {
+            $service->purchase($user, 'trend-'.$index, 1_000_000_001);
+        }
+        $this->actingAs($user)->get('/credits?page=2')->assertInertia(fn (Assert $page) => $page
+            ->has('wallet.trend', 30)
+            ->where('wallet.trend.0.balance', '6.000000006')
+            ->where('wallet.trend.29.balance', '35.000000035'));
+        $this->assertSame('5.000000000', app(WalletService::class)->details($other)['trend']->first()['balance']);
+    }
+
     private function funded(): User
     {
         $user = User::factory()->create();
@@ -146,7 +161,7 @@ class WalletTest extends TestCase
         } catch (ValidationException $exception) {
             $this->assertArrayHasKey('purchase_id', $exception->errors());
         }
-        $this->assertSame(5_000_000_000,$user->fresh()->balance_nanos);
-        $this->assertSame(1,LedgerEntry::count());
+        $this->assertSame(5_000_000_000, $user->fresh()->balance_nanos);
+        $this->assertSame(1, LedgerEntry::count());
     }
 }

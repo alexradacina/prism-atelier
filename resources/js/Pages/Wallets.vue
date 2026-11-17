@@ -1,9 +1,14 @@
 <script setup>
+import { computed } from "vue";
+import MoneyChart from "../Components/MoneyChart.vue";
 import { Link, usePoll } from "@inertiajs/vue3";
 import AppLayout from "../Components/AppLayout.vue";
 import Pagination from "../Components/Pagination.vue";
 import { money } from "../lib";
-defineProps({ users: Object });
+const props = defineProps({ users: Object });
+const balanceRows = computed(() =>
+    props.users.data.map((user) => ({ ...user, label: user.name })),
+);
 usePoll(5000, { only: ["users", "auth"] });
 </script>
 <template>
@@ -18,6 +23,16 @@ usePoll(5000, { only: ["users", "auth"] });
                 </p>
             </div>
         </div>
+        <MoneyChart
+            title="Credits across your users"
+            subtitle="Users on this page · available credit and pending holds · USD"
+            :rows="balanceRows"
+            :series="[
+                { key: 'available', label: 'Available', color: '#778267' },
+                { key: 'reserved', label: 'Reserved', color: '#b78c4a' },
+            ]"
+            bars
+        />
         <div class="table-wrap">
             <table>
                 <thead>

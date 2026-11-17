@@ -2580,3 +2580,113 @@ tr:last-child td {
         margin-left: 0;
     }
 }
+
+.finance-charts {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+    gap: 22px;
+    margin: 28px 0;
+}
+.money-chart {
+    min-width: 0;
+    padding: 24px;
+    margin-bottom: 24px;
+    background: #fbfaf6;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+}
+.finance-charts .money-chart {
+    margin-bottom: 0;
+}
+.chart-heading h2 {
+    font-size: 25px;
+    margin: 0 0 7px;
+    font-weight: 400;
+}
+.chart-heading p {
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.6;
+    margin: 0;
+}
+.chart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin: 20px 0 10px;
+    font-size: 13px;
+    color: var(--muted);
+}
+.chart-legend span,
+.allocation-detail span {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.chart-legend i,
+.allocation-detail i {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+}
+.money-chart svg {
+    display: block;
+    width: 100%;
+    min-height: 170px;
+    overflow: visible;
+}
+.money-chart svg text {
+    fill: #69715f;
+    font: 12px sans-serif;
+}
+.money-chart svg circle:focus,
+.money-chart svg rect:focus {
+    outline: 2px solid #963f32;
+}
+.chart-empty {
+    padding: 30px 0;
+    color: var(--muted);
+    line-height: 1.6;
+}
+.allocation-bar {
+    display: flex;
+    height: 20px;
+    overflow: hidden;
+    border-radius: 5px;
+    background: #eeeee6;
+    margin: 28px 0;
+}
+.allocation-bar span {
+    transition: width 0.3s ease;
+}
+.allocation-detail {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 14px;
+}
+.allocation-detail strong {
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+}
+@media (max-width: 1150px) {
+    .finance-charts {
+        grid-template-columns: 1fr;
+    }
+}
+@media (max-width: 680px) {
+    .money-chart {
+        padding: 18px;
+    }
+    .money-chart svg {
+        min-height: 130px;
+    }
+    .chart-heading h2 {
+        font-size: 23px;
+    }
+}

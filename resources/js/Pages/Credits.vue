@@ -1,6 +1,7 @@
 <script setup>
 import { useForm, usePage, usePoll } from "@inertiajs/vue3";
 import AppLayout from "../Components/AppLayout.vue";
+import WalletCharts from "../Components/WalletCharts.vue";
 import WalletSummary from "../Components/WalletSummary.vue";
 import WalletActivity from "../Components/WalletActivity.vue";
 import { money } from "../lib";
@@ -28,6 +29,7 @@ function purchase() {
             </div>
         </div>
         <WalletSummary :summary="wallet.summary" />
+        <WalletCharts :wallet="wallet" />
         <div class="credit-grid">
             <div class="wallet-explainer">
                 <span class="eyebrow">A HOLD IS NOT A CHARGE</span>

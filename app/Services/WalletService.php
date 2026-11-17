@@ -21,6 +21,9 @@ class WalletService
 
             return [
                 'owner' => ['id' => $user->id, 'name' => $user->name, 'email' => $user->email],
+                'trend' => (clone $ledger)->latest('id')->limit(30)->get(['id', 'created_at', 'balance_after_nanos'])->reverse()->values()
+                    ->map(fn (LedgerEntry $entry) => ['label' => $entry->created_at->utc()->format('M j H:i').' · #'.$entry->id,
+                        'balance' => Money::format($entry->balance_after_nanos)]),
                 'summary' => [
                     'balance' => Money::format($user->balance_nanos),
                     'reserved' => Money::format($user->reserved_nanos),

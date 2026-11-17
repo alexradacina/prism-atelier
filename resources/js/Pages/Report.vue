@@ -1,6 +1,7 @@
 <script setup>
-import { reactive } from "vue";
+import { computed, reactive } from "vue";
 import { router } from "@inertiajs/vue3";
+import MoneyChart from "../Components/MoneyChart.vue";
 import AppLayout from "../Components/AppLayout.vue";
 import { money } from "../lib";
 const props = defineProps({
@@ -8,6 +9,22 @@ const props = defineProps({
     report_error: String,
     filters: Object,
 });
+const chartDays = computed(() =>
+    [...(props.report?.daily || [])]
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .map((day) => ({ ...day, label: day.date.slice(5) })),
+);
+const chartUsers = computed(() =>
+    [...(props.report?.users || [])]
+        .sort((a, b) => Number(b.charged) - Number(a.charged))
+        .slice(0, 8)
+        .map((user) => ({ ...user, label: user.name })),
+);
+const spendSeries = [
+    { key: "charged", label: "User spend", color: "#963f32" },
+    { key: "provider", label: "Provider cost", color: "#b78c4a" },
+    { key: "profit", label: "Profit", color: "#778267" },
+];
 const dates = reactive({ ...props.filters });
 function update() {
     router.get("/admin/reports", dates, { preserveState: true });
@@ -90,6 +107,20 @@ function update() {
                         Report refreshes within 30 seconds.
                     </p>
                 </div>
+            </div>
+            <div class="finance-charts">
+                <MoneyChart
+                    title="Daily spend & profit"
+                    subtitle="Selected date range · UTC completion days · USD"
+                    :rows="chartDays"
+                    :series="spendSeries"
+                /><MoneyChart
+                    title="Spend by user"
+                    subtitle="Top 8 users by spend in this period · USD"
+                    :rows="chartUsers"
+                    :series="spendSeries"
+                    bars
+                />
             </div>
             <section class="report-section">
                 <div class="section-heading">

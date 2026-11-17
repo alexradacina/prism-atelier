@@ -1,6 +1,7 @@
 <script setup>
 import { Link, usePoll } from "@inertiajs/vue3";
 import AppLayout from "../Components/AppLayout.vue";
+import WalletCharts from "../Components/WalletCharts.vue";
 import WalletSummary from "../Components/WalletSummary.vue";
 import WalletActivity from "../Components/WalletActivity.vue";
 defineProps({ wallet: Object });
@@ -18,7 +19,8 @@ usePoll(4000, { only: ["wallet", "auth"] });
                 >← All user balances</Link
             >
         </div>
-        <WalletSummary :summary="wallet.summary" /><WalletActivity
+        <WalletSummary :summary="wallet.summary" />
+        <WalletCharts :wallet="wallet" /><WalletActivity
             :wallet="wallet"
             :show-history="false"
         />
