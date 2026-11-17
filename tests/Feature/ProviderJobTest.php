@@ -104,4 +104,18 @@ class ProviderJobTest extends TestCase
         $job->handle(app(Pixelforge::class), app(GenerationService::class));
         $this->assertSame('queued', $generation->fresh()->status);
     }
+
+    public function test_exhausted_provider_throttling_shows_a_helpful_customer_message(): void
+    {
+        $user = User::factory()->create(['balance_nanos' => 1_000_000_000, 'reserved_nanos' => 90_000_000]);
+        $generation = Generation::factory()->for($user)->create(['submission_attempts' => 5]);
+        Http::fake(['*/pricing' => Http::response($this->pricing()),
+            '*/generations' => Http::response(['error' => ['message' => 'Too many requests.']], 429)]);
+        (new SubmitGeneration($generation->id))->handle(app(Pixelforge::class), app(GenerationService::class));
+        $this->assertStringContainsString('image service is at capacity', $generation->fresh()->error_message);
+        $this->assertStringNotContainsString('Too many requests', $generation->fresh()->error_message);
+        $this->assertSame('failed', $generation->fresh()->status);
+        $this->assertSame(0, $generation->fresh()->actual_nanos);
+        $this->assertSame(0, $user->fresh()->reserved_nanos);
+    }
 }

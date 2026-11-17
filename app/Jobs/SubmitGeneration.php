@@ -83,7 +83,12 @@ class SubmitGeneration implements ShouldBeUnique, ShouldQueue
             }
             $status = $exception->response->status();
             if (in_array($status, [400, 401, 404, 409, 422], true) || $generation->submission_attempts >= ProviderLimits::MAX_SUBMISSION_ATTEMPTS) {
-                $this->finishRetries($generation, $service, $exception->response->json('error.message') ?? 'The image service rejected this request. You were not charged.');
+                $message = match ($status) {
+                    429 => 'The image service is at capacity. Please try creating this image again in a few minutes. You were not charged.',
+                    503 => 'The image service is temporarily busy. Please try creating this image again shortly. You were not charged.',
+                    default => $exception->response->json('error.message') ?? 'The image service rejected this request. You were not charged.',
+                };
+                $this->finishRetries($generation, $service, $message);
 
                 return;
             }
