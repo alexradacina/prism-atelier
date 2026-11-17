@@ -134,7 +134,9 @@ class GenerationService
             $locked->sync_error_status = null;
             $locked->synced_at = now();
             $locked->rates = $object['rates'];
-            $locked->error_message = $object['error']['message'] ?? null;
+            $error = isset($object['error']) ? ProviderError::fromPayload($object['error']) : null;
+            $locked->provider_error = $error?->details;
+            $locked->error_message = $error?->details['message'];
             if ($locked->status === 'processing' && $object['status'] === 'queued') {
                 $locked->save();
 

@@ -7,6 +7,7 @@ use App\Exceptions\SubmissionStopped;
 use App\Models\Generation;
 use App\Services\GenerationService;
 use App\Services\Pixelforge;
+use App\Services\ProviderError;
 use App\Services\ProviderLimits;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -76,19 +77,15 @@ class SubmitGeneration implements ShouldBeUnique, ShouldQueue
             return;
         } catch (RequestException $exception) {
             $generation->refresh();
+            $error = ProviderError::fromResponse($exception->response);
+            $generation->update(['provider_error' => $error->details]);
             if ($checkingPricing) {
                 $this->pricingUnavailable($generation, $service, (int) $exception->response->header('Retry-After', 0));
 
                 return;
             }
-            $status = $exception->response->status();
-            if (in_array($status, [400, 401, 404, 409, 422], true) || $generation->submission_attempts >= ProviderLimits::MAX_SUBMISSION_ATTEMPTS) {
-                $message = match ($status) {
-                    429 => 'The image service is at capacity. Please try creating this image again in a few minutes. You were not charged.',
-                    503 => 'The image service is temporarily busy. Please try creating this image again shortly. You were not charged.',
-                    default => $exception->response->json('error.message') ?? 'The image service rejected this request. You were not charged.',
-                };
-                $this->finishRetries($generation, $service, $message);
+            if (! $error->retryable() || $generation->submission_attempts >= ProviderLimits::MAX_SUBMISSION_ATTEMPTS) {
+                $this->finishRetries($generation, $service, $error->submissionMessage());
 
                 return;
             }

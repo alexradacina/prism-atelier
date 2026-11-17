@@ -22,7 +22,7 @@ class Generation extends Model
         return [
             'estimated_nanos' => 'integer', 'reserved_nanos' => 'integer',
             'provider_nanos' => 'integer', 'actual_nanos' => 'integer',
-            'reference_images' => 'array', 'quoted_pricing' => 'array', 'rates' => 'array', 'usage' => 'array',
+            'provider_error' => 'array', 'reference_images' => 'array', 'quoted_pricing' => 'array', 'rates' => 'array', 'usage' => 'array',
             'completed_at' => 'immutable_datetime', 'synced_at' => 'immutable_datetime',
             'image_url_expires_at' => 'immutable_datetime', 'settled_at' => 'immutable_datetime',
             'provider_slot' => 'boolean', 'submission_uncertain' => 'boolean',
@@ -61,6 +61,7 @@ class Generation extends Model
             'actual_cost' => $this->actual_nanos === null ? null : Money::format($this->actual_nanos),
             'error' => $this->error_message, 'created_at' => $this->created_at->toIso8601String(),
             'notice' => $notice,
+            'validation_errors' => $this->provider_error['errors'] ?? [],
         ];
     }
 }

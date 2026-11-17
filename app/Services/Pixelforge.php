@@ -48,7 +48,7 @@ class Pixelforge
                 'metadata' => ['local_generation_id' => $generation->id],
             ]);
         $this->limits->observe($response);
-        if (in_array($response->status(), [400, 401, 404, 409, 422, 429, 503], true)) {
+        if ($response->failed() && ProviderError::fromResponse($response)->definitiveRejection()) {
             $this->limits->rejected($generation, $wasUncertain);
         }
 

@@ -71,9 +71,26 @@ const unavailable = ref(false);
             <p v-if="generation.error" class="generation-error">
                 {{ generation.error }}
             </p>
-            <p v-else-if="generation.notice" class="generation-notice" role="status">
+            <p
+                v-else-if="generation.notice"
+                class="generation-notice"
+                role="status"
+            >
                 {{ generation.notice }}
             </p>
+            <ul
+                v-if="Object.keys(generation.validation_errors || {}).length"
+                class="generation-error"
+            >
+                <template
+                    v-for="(messages, field) in generation.validation_errors"
+                    :key="field"
+                >
+                    <li v-for="message in messages" :key="message">
+                        {{ message }}
+                    </li>
+                </template>
+            </ul>
             <div class="generation-costs">
                 <div>
                     <span>Estimated</span

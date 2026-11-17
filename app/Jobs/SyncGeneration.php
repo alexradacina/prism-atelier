@@ -6,6 +6,7 @@ use App\Exceptions\ProviderLimited;
 use App\Models\Generation;
 use App\Services\GenerationService;
 use App\Services\Pixelforge;
+use App\Services\ProviderError;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Http\Client\ConnectionException;
@@ -55,7 +56,11 @@ class SyncGeneration implements ShouldQueue
             return;
         } catch (RequestException|ConnectionException $exception) {
             $status = $exception instanceof RequestException ? $exception->response->status() : null;
-            if ($status >= 400 && $status < 500 && ! in_array($status, [408, 429], true)) {
+            $error = $exception instanceof RequestException ? ProviderError::fromResponse($exception->response) : null;
+            if ($error !== null) {
+                $generation->update(['provider_error' => $error->details]);
+            }
+            if ($error !== null && ! $error->retryable()) {
                 $paused = Generation::whereKey($generation->id)->whereIn('status', ['queued', 'processing'])->whereNull('sync_paused_at')->update([
                     'sync_paused_at' => now(), 'sync_error_status' => $status, 'sync_retry_at' => null, 'waiting_message' => null,
                     'error_message' => 'We cannot confirm this image’s status. Support needs to investigate. Your credits remain reserved and no final charge has been recorded.',
