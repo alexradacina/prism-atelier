@@ -10,8 +10,8 @@ const props = defineProps({
 });
 const width = 760,
     height = 230,
-    left = 64,
-    right = 24,
+    left = 96,
+    right = 40,
     top = 22,
     bottom = 38;
 const bounds = computed(() => {
@@ -43,7 +43,12 @@ const ticks = computed(() =>
         ]),
     ].filter((i) => i >= 0),
 );
-const axisMoney = (value) => money(value.toFixed(9));
+const axisMoney = (value) =>
+    new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+        maximumSignificantDigits: 3,
+    }).format(value);
 </script>
 <template>
     <section class="money-chart">
@@ -156,7 +161,11 @@ const axisMoney = (value) => money(value.toFixed(9));
                 :y="height - 12"
                 text-anchor="middle"
             >
-                {{ rows[index].label }}
+                {{
+                    rows[index].label.length > 22
+                        ? rows[index].label.slice(0, 20) + "…"
+                        : rows[index].label
+                }}
             </text>
         </svg>
         <p v-else class="chart-empty">

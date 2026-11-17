@@ -2639,7 +2639,7 @@ tr:last-child td {
 }
 .money-chart svg text {
     fill: #69715f;
-    font: 12px sans-serif;
+    font: 18px sans-serif;
 }
 .money-chart svg circle:focus,
 .money-chart svg rect:focus {
