@@ -57,6 +57,15 @@ const active = (path) => page.url.split("?")[0] === path;
                         <span class="nav-arrow">↗</span></a
                     >
                 </template>
+                <Link
+                    v-if="user.is_admin"
+                    href="/admin/wallets"
+                    :class="[
+                        'nav-link',
+                        { active: page.url.startsWith('/admin/wallets') },
+                    ]"
+                    ><span class="nav-icon">◈</span> User balances</Link
+                >
             </nav>
             <div class="sidebar-bottom">
                 <div class="atelier-note">

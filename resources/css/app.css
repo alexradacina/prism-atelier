@@ -2467,3 +2467,109 @@ tr:last-child td {
         flex-wrap: wrap;
     }
 }
+
+.wallet-summary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+}
+.wallet-stat {
+    padding: 24px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: white;
+}
+.wallet-stat .eyebrow {
+    font-size: 11px;
+    color: #65705b;
+    letter-spacing: 1px;
+}
+.wallet-stat strong {
+    display: block;
+    font-size: clamp(20px, 2vw, 30px);
+    margin: 18px 0 12px;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+}
+.wallet-stat p {
+    font-size: 13px;
+    color: #64705a;
+    line-height: 1.7;
+}
+.wallet-stat.wallet-reserved {
+    background: #f4eee3;
+}
+.wallet-stat.wallet-available {
+    background: #e8ecdf;
+}
+.wallet-lifetime {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px 28px;
+    margin: 19px 0 28px;
+    font-size: 12px;
+    color: #68735d;
+}
+.wallet-lifetime strong {
+    display: block;
+    margin-top: 6px;
+    font-variant-numeric: tabular-nums;
+}
+.wallet-lifetime > span:last-child {
+    margin-left: auto;
+    align-self: center;
+}
+.wallet-explainer {
+    padding: 26px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: #eeeee6;
+}
+.wallet-explainer h2 {
+    font-family: var(--serif);
+    font-size: 32px;
+    line-height: 1.2;
+    margin: 16px 0;
+}
+.wallet-explainer p {
+    font-size: 14px;
+    color: #64705a;
+    margin-top: 14px;
+}
+.wallet-section {
+    margin-top: 32px;
+}
+.wallet-section-note {
+    font-size: 13px;
+    color: #64705a;
+    margin: -4px 0 18px;
+}
+.wallet-description {
+    display: block;
+    max-width: 280px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.wallet-ledger .number,
+.wallet-section .number {
+    white-space: nowrap;
+}
+.wallet-ledger td,
+.wallet-section td {
+    line-height: 1.7;
+    vertical-align: top;
+}
+@media (max-width: 900px) {
+    .wallet-summary {
+        grid-template-columns: 1fr;
+    }
+    .wallet-stat strong {
+        font-size: 28px;
+        margin: 12px 0;
+    }
+    .wallet-lifetime > span:last-child {
+        margin-left: 0;
+    }
+}

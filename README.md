@@ -81,6 +81,7 @@ When moving an existing SQLite installation, preserve the original database and 
 - Durable signed webhook inbox with unique event IDs, atomic processing and terminal-state protection.
 - Polling and scheduled recovery when webhooks are unavailable or missed.
 - Exact final billing, idempotent demo credit purchases, and balance reservations.
+- Append-only balance history with exact running balances, separate pending holds and an operator view for every user.
 - Operator reports by UTC completion day, user, and day within each user, with provider usage reconciliation.
 - Redis-backed cache/queues and an operator-only Horizon dashboard with job metrics.
 
@@ -94,7 +95,11 @@ Pricing and token rules are read from `GET /v1/pricing` and cached for 60 second
 
 A database transaction locks the user before reserving credits. Existing reservations reduce available balance, so simultaneous requests cannot independently spend the same funds. The quote ID doubles as the local generation ID and provider idempotency key. A repeated submission cannot create another local record or another reservation.
 
-On completion, one transaction locks the user and generation, records the exact provider and user costs, appends a uniquely constrained ledger entry, deducts the final charge and releases the full reservation. Retries from submission responses, webhooks and polling all use this same settlement method.
+On completion, one transaction locks the user and generation, records the exact provider and user costs, appends a uniquely constrained ledger entry with the balance after the transaction, deducts the final charge and releases the full reservation. Retries from submission responses, webhooks and polling all use this same settlement method. A unique generation ID and idempotency key in the ledger provide a second database-level guard against duplicate charges. A failed ledger insert rolls back the wallet and generation changes together.
+
+The existing `ledger_entries` table records every credit addition and final charge; failed generations have zero-value entries. Ledger rows cannot be edited or deleted through the application model. Each row stores an integer `balance_after_nanos` snapshot, and the migration backfills existing snapshots without changing monetary entries. Reusing a purchase key with a different amount is rejected.
+
+The credits page separates **credit balance** (added credits minus completed charges), **reserved** (pending holds) and **available** (balance minus holds). Reservations never appear as a completed spend. Its history shows additions, spending and running balances to all nine decimal places, with pending images listed separately. Amount formatting and affordability checks in the browser also use integer nanodollars with BigInt, avoiding float precision loss.
 
 **Rate-change policy:** the displayed maximum is at quote-time rates, not a contractual price cap. Pixelforge locks prices when it accepts the request. If rates change between quoting and acceptance, the final charge still uses the provider's locked rates plus 25%, even if it exceeds the reservation. A resulting negative balance blocks new generations until topped up. The generation retains both quoted pricing and actual rates for audit.
 
@@ -140,6 +145,8 @@ php artisan prism:admin your@email.com --revoke
 
 Visit `/admin/reports`. Ordinary users receive HTTP 403. Registration cannot grant admin access.
 
+Operators can open **User balances** at `/admin/wallets`, including users with no successful generations, then inspect any user’s running balance history and current holds. Ordinary users can only view their own wallet at `/credits`.
+
 The same operators can open **Queue monitor** in the sidebar or visit `/horizon`. The dashboard and its API require sign-in and operator access in every environment, including `local`. Horizon records job throughput, runtime, pending work and failures; the scheduler takes a metrics snapshot every five minutes. The supervisor timeout is 30 seconds, above the generation jobs' 25-second timeout and below Redis's 90-second `retry_after`.
 
 Use `php artisan horizon:status` to check the supervisor and `php artisan horizon:retry all` to retry failed jobs. In production, run Horizon under a process monitor; after deployments, `php artisan horizon:terminate` exits gracefully so the monitor starts the new code.
@@ -152,8 +159,11 @@ Use a separate API key per environment. If an API key is also used outside this 
 
 ```sh
 php artisan test
+npm test
 npm run build
 ```
+
+MySQL/PostgreSQL race tests start six independent processes at the same time. They verify that distinct requests cannot reserve the same money, replayed submissions create one hold, and simultaneous terminal updates create one charge. SQLite skips these three row-lock tests; the ordinary functional suite still runs there. These tests run only against the isolated CI/test database.
 
 The tests isolate all provider HTTP requests and cover money precision and Unicode, mutable pricing, quote expiry and ownership, credit reservations, idempotent purchases/submissions, success/failure settlement, forged/stale signatures, repeated and out-of-order webhooks, early webhooks, polling recovery, retry headers, auth isolation and usage reconciliation.
 

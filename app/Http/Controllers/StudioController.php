@@ -4,10 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\QuoteRequest;
 use App\Models\Generation;
-use App\Models\LedgerEntry;
 use App\Services\GenerationService;
 use App\Services\Money;
 use App\Services\Pixelforge;
+use App\Services\WalletService;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\JsonResponse;
@@ -60,14 +60,11 @@ class StudioController extends Controller
         return to_route('history')->with('message', 'Your image is in the queue. We’ll update it here as it develops.');
     }
 
-    public function credits(Request $request): Response
+    public function credits(Request $request, WalletService $wallets): Response
     {
         return Inertia::render('Credits', [
             'purchase_id' => (string) Str::uuid(),
-            'entries' => LedgerEntry::where('user_id', $request->user()->id)->latest('id')->paginate(20)->through(fn ($entry) => [
-                'id' => $entry->id, 'kind' => $entry->kind,
-                'amount' => Money::format($entry->amount_nanos), 'created_at' => $entry->created_at->toIso8601String(),
-            ]),
+            'wallet' => fn () => $wallets->details($request->user()),
         ]);
     }
 

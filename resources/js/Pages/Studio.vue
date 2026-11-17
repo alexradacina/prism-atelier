@@ -4,7 +4,7 @@ import { Link, useForm, usePage, usePoll } from "@inertiajs/vue3";
 import AppLayout from "../Components/AppLayout.vue";
 import ArtStudy from "../Components/ArtStudy.vue";
 import GenerationCard from "../Components/GenerationCard.vue";
-import { money } from "../lib";
+import { money, toNanos } from "../lib";
 defineProps({ generations: Array });
 const page = usePage();
 const form = useForm({ quote_id: "" });
@@ -34,7 +34,7 @@ const validQuote = computed(
 const affordable = computed(
     () =>
         quote.value &&
-        Number(page.props.auth.available) >= Number(quote.value.maximum_cost),
+        toNanos(page.props.auth.available) >= toNanos(quote.value.maximum_cost),
 );
 let timer,
     controller,

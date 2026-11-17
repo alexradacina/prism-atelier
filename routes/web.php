@@ -4,6 +4,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\PixelforgeWebhookController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\StudioController;
+use App\Http\Controllers\WalletController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -24,4 +25,6 @@ Route::middleware('auth')->group(function () {
     Route::get('/credits', [StudioController::class, 'credits'])->name('credits');
     Route::post('/credits', [StudioController::class, 'purchase'])->middleware('throttle:10,1')->name('credits.purchase');
     Route::get('/admin/reports', ReportController::class)->name('admin.reports');
+    Route::get('/admin/wallets', [WalletController::class, 'index'])->name('admin.wallets');
+    Route::get('/admin/wallets/{user}', [WalletController::class, 'show'])->name('admin.wallets.show');
 });

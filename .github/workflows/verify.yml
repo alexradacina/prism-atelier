@@ -82,4 +82,5 @@ jobs:
       - run: php artisan key:generate
       - run: php artisan test
       - run: npm ci
+      - run: npm test
       - run: npm run build

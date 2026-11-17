@@ -4,7 +4,8 @@
     "scripts": {
         "build": "vite build",
         "dev": "vite",
-        "format": "prettier --write resources/js resources/css vite.config.js"
+        "format": "prettier --write resources/js resources/css vite.config.js",
+        "test": "node --test tests/Frontend/*.test.js"
     },
     "dependencies": {
         "@inertiajs/vue3": "^3.11.0",

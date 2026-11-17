@@ -1,10 +1,12 @@
 <script setup>
-import { useForm, usePage } from "@inertiajs/vue3";
+import { useForm, usePage, usePoll } from "@inertiajs/vue3";
 import AppLayout from "../Components/AppLayout.vue";
-import Pagination from "../Components/Pagination.vue";
-import { money, date } from "../lib";
-const props = defineProps({ purchase_id: String, entries: Object });
+import WalletSummary from "../Components/WalletSummary.vue";
+import WalletActivity from "../Components/WalletActivity.vue";
+import { money } from "../lib";
+const props = defineProps({ purchase_id: String, wallet: Object });
 const page = usePage();
+usePoll(4000, { only: ["wallet", "auth"] });
 const form = useForm({ amount: "10", purchase_id: props.purchase_id });
 function purchase() {
     form.post("/credits", {
@@ -25,28 +27,19 @@ function purchase() {
                 </p>
             </div>
         </div>
+        <WalletSummary :summary="wallet.summary" />
         <div class="credit-grid">
-            <div class="balance-card">
-                <span class="eyebrow">AVAILABLE TO CREATE</span>
-                <div class="balance-amount">
-                    {{ money(page.props.auth.available) }}<span>USD</span>
-                </div>
-                <div class="balance-detail">
-                    <span
-                        >Total balance<strong
-                            :title="money(page.props.auth.balance, true)"
-                            >{{ money(page.props.auth.balance) }}</strong
-                        ></span
-                    ><span
-                        >Reserved for active requests<strong
-                            :title="money(page.props.auth.reserved, true)"
-                            >{{ money(page.props.auth.reserved) }}</strong
-                        ></span
-                    >
-                </div>
+            <div class="wallet-explainer">
+                <span class="eyebrow">A HOLD IS NOT A CHARGE</span>
+                <h2>Your credits stay yours<br />until the image succeeds.</h2>
                 <p>
-                    We reserve the maximum estimated cost while an image
-                    develops. Any unused amount comes back when it’s done.
+                    We reserve enough for the maximum estimated cost before
+                    accepting a request. Available credits exclude that hold, so
+                    the same money cannot fund another image.
+                </p>
+                <p>
+                    Success creates one final charge and releases the hold.
+                    Failure releases it in full and costs nothing.
                 </p>
             </div>
             <form class="purchase-card" @submit.prevent="purchase">
@@ -86,53 +79,6 @@ function purchase() {
                 </p>
             </form>
         </div>
-        <section class="activity-section">
-            <div class="section-heading">
-                <h2>Credit activity</h2>
-                <span class="muted">Exact amounts in USD</span>
-            </div>
-            <div v-if="entries.data.length" class="table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Activity</th>
-                            <th>Date</th>
-                            <th class="number">Amount</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr v-for="entry in entries.data" :key="entry.id">
-                            <td>
-                                <span :class="['activity-icon', entry.kind]">{{
-                                    entry.kind === "purchase" ? "+" : "✧"
-                                }}</span>{{
-                                    entry.kind === "purchase"
-                                        ? "Demo credit purchase"
-                                        : "Image generation"
-                                }}
-                            </td>
-                            <td class="muted">{{ date(entry.created_at) }}</td>
-                            <td
-                                :class="[
-                                    'number',
-                                    { positive: entry.kind === 'purchase' },
-                                ]"
-                            >
-                                {{ entry.kind === "purchase" ? "+" : ""
-                                }}{{ money(entry.amount, true) }}
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-            <div v-else class="empty-strip">
-                <span>◈</span>
-                <div>
-                    <strong>A fresh balance sheet.</strong>
-                    <p>Add some demo credits to start creating.</p>
-                </div>
-            </div>
-            <Pagination :data="entries" />
-        </section>
+        <WalletActivity :wallet="wallet" />
     </AppLayout>
 </template>

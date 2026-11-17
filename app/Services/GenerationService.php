@@ -59,14 +59,23 @@ class GenerationService
 
     public function purchase(User $user, string $purchaseId, int $nanos): void
     {
+        if ($nanos <= 0) {
+            throw new \InvalidArgumentException('Credit additions must be positive.');
+        }
         DB::transaction(function () use ($user, $purchaseId, $nanos) {
             $lockedUser = User::query()->lockForUpdate()->findOrFail($user->id);
             $key = 'purchase:'.$user->id.':'.$purchaseId;
-            if (LedgerEntry::where('idempotency_key', $key)->exists()) {
+            $existing = LedgerEntry::where('idempotency_key', $key)->first();
+            if ($existing) {
+                if ($existing->amount_nanos !== $nanos) {
+                    throw ValidationException::withMessages(['purchase_id' => 'This purchase was already recorded with a different amount.']);
+                }
+
                 return;
             }
             LedgerEntry::create([
                 'user_id' => $user->id, 'idempotency_key' => $key, 'kind' => 'purchase', 'amount_nanos' => $nanos,
+                'balance_after_nanos' => $lockedUser->balance_nanos + $nanos,
             ]);
             $lockedUser->increment('balance_nanos', $nanos);
         }, 5);
@@ -113,6 +122,7 @@ class GenerationService
                 LedgerEntry::create([
                     'user_id' => $user->id, 'generation_id' => $locked->id,
                     'idempotency_key' => 'generation:'.$locked->id, 'kind' => 'generation', 'amount_nanos' => -$charge,
+                    'balance_after_nanos' => $user->balance_nanos,
                 ]);
                 $locked->reserved_nanos = 0;
             }
@@ -129,6 +139,11 @@ class GenerationService
                 return;
             }
             $user->decrement('reserved_nanos', $locked->reserved_nanos);
+            LedgerEntry::create([
+                'user_id' => $user->id, 'generation_id' => $locked->id,
+                'idempotency_key' => 'generation:'.$locked->id, 'kind' => 'generation',
+                'amount_nanos' => 0, 'balance_after_nanos' => $user->balance_nanos,
+            ]);
             $locked->update([
                 'status' => 'failed', 'error_message' => $message,
                 'reserved_nanos' => 0, 'actual_nanos' => 0, 'provider_nanos' => 0,
