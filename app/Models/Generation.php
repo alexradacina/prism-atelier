@@ -28,6 +28,8 @@ class Generation extends Model
             'provider_slot' => 'boolean', 'submission_uncertain' => 'boolean',
             'provider_created_at' => 'immutable_datetime', 'submission_retry_at' => 'immutable_datetime',
             'sync_retry_at' => 'immutable_datetime', 'submission_attempts' => 'integer', 'sync_failures' => 'integer',
+            'sync_paused_at' => 'immutable_datetime', 'sync_error_status' => 'integer',
+            'submission_pricing' => 'array', 'pricing_checked_at' => 'immutable_datetime', 'pricing_failures' => 'integer',
         ];
     }
 
@@ -43,6 +45,14 @@ class Generation extends Model
 
     public function display(): array
     {
+        $notice = $this->waiting_message;
+        if ($notice === null && ! $this->terminal() && $this->pricing_checked_at && isset($this->quoted_pricing['tokens'])) {
+            $quotedMaximum = Money::estimate($this->only(['prompt', 'size', 'quality', 'reference_images']), $this->quoted_pricing)['maximum_nanos'];
+            if ($this->reserved_nanos > $quotedMaximum) {
+                $notice = 'Your credit hold was increased after a pricing refresh. Unused credits return when this image finishes.';
+            }
+        }
+
         return [
             'id' => $this->id, 'prompt' => $this->prompt, 'size' => $this->size, 'quality' => $this->quality,
             'status' => $this->status, 'image_url' => $this->image_url,
@@ -50,7 +60,7 @@ class Generation extends Model
             'estimated_cost' => Money::format($this->estimated_nanos),
             'actual_cost' => $this->actual_nanos === null ? null : Money::format($this->actual_nanos),
             'error' => $this->error_message, 'created_at' => $this->created_at->toIso8601String(),
-            'notice' => $this->waiting_message,
+            'notice' => $notice,
         ];
     }
 }

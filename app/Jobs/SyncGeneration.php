@@ -11,6 +11,7 @@ use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
+use Illuminate\Support\Facades\Log;
 
 class SyncGeneration implements ShouldQueue
 {
@@ -37,7 +38,7 @@ class SyncGeneration implements ShouldQueue
     public function handle(Pixelforge $provider, GenerationService $service): void
     {
         $generation = Generation::findOrFail($this->generationId);
-        if ($generation->terminal() || ! $generation->provider_id) {
+        if ($generation->terminal() || ! $generation->provider_id || $generation->sync_paused_at !== null) {
             return;
         }
         if ($generation->sync_retry_at?->isFuture()) {
@@ -53,6 +54,19 @@ class SyncGeneration implements ShouldQueue
 
             return;
         } catch (RequestException|ConnectionException $exception) {
+            $status = $exception instanceof RequestException ? $exception->response->status() : null;
+            if ($status >= 400 && $status < 500 && ! in_array($status, [408, 429], true)) {
+                $paused = Generation::whereKey($generation->id)->whereIn('status', ['queued', 'processing'])->whereNull('sync_paused_at')->update([
+                    'sync_paused_at' => now(), 'sync_error_status' => $status, 'sync_retry_at' => null, 'waiting_message' => null,
+                    'error_message' => 'We cannot confirm this image’s status. Support needs to investigate. Your credits remain reserved and no final charge has been recorded.',
+                ]);
+                if ($paused) {
+                    Log::warning('Pixelforge status polling paused for operator review.', ['generation_id' => $generation->id, 'http_status' => $status]);
+                    $this->fail(new \RuntimeException('Status polling paused after HTTP '.$status.'. Resolve the cause and run prism:resume-polling.'));
+                }
+
+                return;
+            }
             $failures = $generation->sync_failures + 1;
             $retryAfter = $exception instanceof RequestException ? (int) $exception->response->header('Retry-After', 0) : 0;
             $delay = max($retryAfter, $failures >= 5 ? 300 : $this->backoff()[min($failures - 1, 3)]);

@@ -7,6 +7,7 @@ use App\Models\Generation;
 use App\Models\LedgerEntry;
 use App\Models\User;
 use App\Services\GenerationService;
+use App\Services\Money;
 use App\Services\ProviderLimits;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
 use Illuminate\Support\Facades\DB;
@@ -224,5 +225,23 @@ class WalletConcurrencyTest extends TestCase
         $this->assertCount(1, array_filter($results, fn ($result) => $result['result'] === 'admitted'), json_encode($results));
         $this->assertCount(5, array_filter($results, fn ($result) => $result['result'] === 'waiting'), json_encode($results));
         $this->assertSame(1, Generation::where('provider_slot', true)->count());
+    }
+
+    public function test_parallel_price_increases_cannot_reserve_the_same_available_money(): void
+    {
+        $this->requireConcurrentDatabase();
+        $user = User::factory()->create(['balance_nanos' => 1_100_000_000, 'reserved_nanos' => 540_000_000]);
+        $generations = Generation::factory()->count(6)->for($user)->create(['prompt' => 'Hello']);
+        $pricing = $this->pricing();
+        $pricing['rates']['output_tokens'] = '400.00';
+        $required = Money::estimate($generations[0]->only(['prompt', 'size', 'quality', 'reference_images']), $pricing)['maximum_nanos'];
+        $results = $this->race(function (int $index) use ($generations, $pricing): array {
+            return ['result' => app(GenerationService::class)->refreshReservation(Generation::findOrFail($generations[$index]->id), $pricing) ? 'increased' : 'insufficient'];
+        });
+        $this->assertCount(1, array_filter($results, fn ($result) => $result['result'] === 'increased'), json_encode($results));
+        $this->assertCount(5, array_filter($results, fn ($result) => $result['result'] === 'insufficient'), json_encode($results));
+        $this->assertSame(450_000_000 + $required, $user->fresh()->reserved_nanos);
+        $this->assertLessThanOrEqual($user->fresh()->balance_nanos, $user->fresh()->reserved_nanos);
+        $this->assertSame($user->fresh()->reserved_nanos, (int) Generation::sum('reserved_nanos'));
     }
 }

@@ -22,7 +22,7 @@ class ProviderJobTest extends TestCase
     {
         Queue::fake();
         $generation = Generation::factory()->create();
-        Http::fake(['*/generations' => Http::response($this->object('queued'), 202)]);
+        Http::fake(['*/pricing' => Http::response($this->pricing()), '*/generations' => Http::response($this->object('queued'), 202)]);
         (new SubmitGeneration($generation->id))->handle(app(Pixelforge::class), app(GenerationService::class));
         Http::assertSent(fn ($request) => $request->hasHeader('Idempotency-Key', $generation->id)
             && $request['metadata']['local_generation_id'] === $generation->id
@@ -35,7 +35,7 @@ class ProviderJobTest extends TestCase
     {
         $user = User::factory()->create(['balance_nanos' => 1_000_000_000, 'reserved_nanos' => 90_000_000]);
         $generation = Generation::factory()->for($user)->create();
-        Http::fake(['*/generations' => Http::response(['error' => ['message' => 'Prompt blocked.']], 400)]);
+        Http::fake(['*/pricing' => Http::response($this->pricing()), '*/generations' => Http::response(['error' => ['message' => 'Prompt blocked.']], 400)]);
         (new SubmitGeneration($generation->id))->handle(app(Pixelforge::class), app(GenerationService::class));
         $this->assertSame('failed', $generation->fresh()->status);
         $this->assertSame(0, $generation->fresh()->actual_nanos);
@@ -66,7 +66,7 @@ class ProviderJobTest extends TestCase
     public function test_provider_retry_after_is_respected_without_releasing_reserved_money(): void
     {
         $generation = Generation::factory()->create();
-        Http::fake(['*/generations' => Http::response(['error' => ['message' => 'Too many requests.']], 429, ['Retry-After' => '45'])]);
+        Http::fake(['*/pricing' => Http::response($this->pricing()), '*/generations' => Http::response(['error' => ['message' => 'Too many requests.']], 429, ['Retry-After' => '45'])]);
         $queueJob = \Mockery::mock(Job::class);
         $queueJob->shouldReceive('attempts')->andReturn(1);
         $queueJob->shouldReceive('release')->once()->with(45);
@@ -81,7 +81,7 @@ class ProviderJobTest extends TestCase
     {
         $user = User::factory()->create(['balance_nanos' => 1_000_000_000, 'reserved_nanos' => 90_000_000]);
         $generation = Generation::factory()->for($user)->create(['submission_attempts' => 5]);
-        Http::fake(['*/generations' => Http::response(['error' => ['message' => 'Overloaded.']], 503)]);
+        Http::fake(['*/pricing' => Http::response($this->pricing()), '*/generations' => Http::response(['error' => ['message' => 'Overloaded.']], 503)]);
         $queueJob = \Mockery::mock(Job::class);
         $queueJob->shouldReceive('attempts')->andReturn(6);
         $job = new SubmitGeneration($generation->id);

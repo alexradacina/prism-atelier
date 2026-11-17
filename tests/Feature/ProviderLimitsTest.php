@@ -195,7 +195,7 @@ class ProviderLimitsTest extends TestCase
         $this->freezeTime();
         $user = User::factory()->create(['balance_nanos' => 1_000_000_000, 'reserved_nanos' => 90_000_000]);
         $generation = Generation::factory()->for($user)->create();
-        Http::fake(['*' => Http::response(['error' => ['code' => 'overloaded', 'message' => 'Overloaded.']], 503, ['Retry-After' => '2'])]);
+        Http::fake(['*/pricing' => Http::response($this->pricing()), '*' => Http::response(['error' => ['code' => 'overloaded', 'message' => 'Overloaded.']], 503, ['Retry-After' => '2'])]);
         foreach ([5, 15, 30, 60, 120, null] as $delay) {
             $this->queuedJob(new SubmitGeneration($generation->id), $delay)->handle(app(Pixelforge::class), app(GenerationService::class));
             if ($delay !== null) {
@@ -203,7 +203,7 @@ class ProviderLimitsTest extends TestCase
             }
         }
         (new SubmitGeneration($generation->id))->handle(app(Pixelforge::class), app(GenerationService::class));
-        Http::assertSentCount(6);
+        Http::assertSentCount(12);
         $this->assertSame(6, $generation->fresh()->submission_attempts);
         $this->assertSame('failed', $generation->fresh()->status);
         $this->assertSame(0, $user->fresh()->reserved_nanos);
@@ -217,7 +217,8 @@ class ProviderLimitsTest extends TestCase
         Queue::fake();
         $user = User::factory()->create(['balance_nanos' => 1_000_000_000, 'reserved_nanos' => 90_000_000]);
         $generation = Generation::factory()->for($user)->create();
-        Http::fakeSequence()->pushFailedConnection('Response was lost.')->push(['error' => ['code' => 'invalid_api_key']], 401);
+        $sequence = Http::sequence()->pushFailedConnection('Response was lost.')->push(['error' => ['code' => 'invalid_api_key']], 401);
+        Http::fake(['*/pricing' => Http::response($this->pricing()), '*/generations' => $sequence]);
         $service = app(GenerationService::class);
         $this->queuedJob(new SubmitGeneration($generation->id), 5)->handle(app(Pixelforge::class), $service);
         $this->assertTrue($generation->fresh()->submission_uncertain);
@@ -302,14 +303,16 @@ class ProviderLimitsTest extends TestCase
         $user = User::factory()->create(['balance_nanos' => 1_000_000_000, 'reserved_nanos' => 90_000_000]);
         $generation = Generation::factory()->for($user)->create([
             'created_at' => now()->subMinutes(6), 'submission_attempts' => 6, 'submission_uncertain' => true,
+            'pricing_failures' => 6,
             'provider_slot' => true, 'error_message' => 'Submission could not be confirmed.',
         ]);
         $this->artisan('prism:reconcile', ['--retry-submissions' => true])->assertSuccessful();
         Queue::assertPushed(SubmitGeneration::class, fn ($job) => $job->generationId === $generation->id);
         $this->assertSame(0, $generation->fresh()->submission_attempts);
         $this->assertTrue($generation->fresh()->submission_uncertain);
+        $this->assertSame(0, $generation->fresh()->pricing_failures);
         $this->assertSame(90_000_000, $user->fresh()->reserved_nanos);
-        Http::fake(['*/generations' => Http::response($this->object(), 202, ['Idempotent-Replayed' => 'true'])]);
+        Http::fake(['*/pricing' => Http::response($this->pricing()), '*/generations' => Http::response($this->object(), 202, ['Idempotent-Replayed' => 'true'])]);
         (new SubmitGeneration($generation->id))->handle(app(Pixelforge::class), app(GenerationService::class));
         Http::assertSent(fn ($request) => $request->hasHeader('Idempotency-Key', $generation->id));
         $this->assertSame(1, LedgerEntry::count());

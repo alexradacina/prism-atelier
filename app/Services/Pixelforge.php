@@ -19,10 +19,23 @@ class Pixelforge
             ->acceptJson()->asJson()->connectTimeout(5)->timeout(15);
     }
 
-    public function pricing(): array
+    public function pricing(bool $fresh = false): array
     {
-        return Cache::remember('pixelforge.pricing', 60, fn () => Http::baseUrl(config('services.pixelforge.url'))
-            ->acceptJson()->connectTimeout(5)->timeout(15)->get('pricing')->throw()->json());
+        $fetch = fn () => Http::baseUrl(config('services.pixelforge.url'))
+            ->acceptJson()->connectTimeout(5)->timeout(15)->get('pricing')->throw()->json();
+        if ($fresh) {
+            $pricing = $fetch();
+            Cache::put('pixelforge.pricing', $pricing, 60);
+
+            return $pricing;
+        }
+
+        return Cache::remember('pixelforge.pricing', 60, $fetch);
+    }
+
+    public function checkSubmission(Generation $generation): void
+    {
+        $this->limits->acquire($generation, reserve: false);
     }
 
     public function submit(Generation $generation): array

@@ -14,6 +14,7 @@ class WebhookEvent extends Model
 
     protected function casts(): array
     {
-        return ['payload' => 'array', 'processed_at' => 'immutable_datetime'];
+        return ['payload' => 'array', 'processed_at' => 'immutable_datetime', 'processing_attempts' => 'integer',
+            'last_attempted_at' => 'immutable_datetime', 'next_attempt_at' => 'immutable_datetime'];
     }
 }

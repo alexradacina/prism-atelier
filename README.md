@@ -102,7 +102,11 @@ The existing `ledger_entries` table records every credit addition and final char
 
 The credits page separates **credit balance** (added credits minus completed charges), **reserved** (pending holds) and **available** (balance minus holds). Reservations never appear as a completed spend. Its history shows additions, spending and running balances to all nine decimal places, with pending images listed separately. Amount formatting and affordability checks in the browser also use integer nanodollars with BigInt, avoiding float precision loss.
 
-**Rate-change policy:** the displayed maximum is at quote-time rates, not a contractual price cap. Pixelforge locks prices when it accepts the request. If rates change between quoting and acceptance, the final charge still uses the provider's locked rates plus 25%, even if it exceeds the reservation. A resulting negative balance blocks new generations until topped up. The generation retains both quoted pricing and actual rates for audit.
+**Rate-change policy:** before every actual create attempt, the worker checks provider capacity, fetches uncached pricing and rechecks the wallet under its user/generation locks. If the new maximum exceeds the hold, it reserves only the increase, provided available credits cover it. This automatic increase is intentional; pending generation cards explain it, and the credits page shows the exact current hold. Repeated checks cannot reserve the same increase twice. Lower rates leave the existing hold intact until settlement. Original quotes, latest pre-submission pricing, the check timestamp and actual accepted rates remain available for audit.
+
+If an increase is unaffordable and no previous attempt is uncertain, the request fails locally for free, releases its hold and asks the user to add credits and request another estimate. An uncertain submission instead stops for operator investigation and retains its hold and provider slot; an earlier create may already exist. Pricing outages have a separate six-check budget, without consuming create attempts or sending a generation at stale rates.
+
+Pixelforge locks rates only when it accepts the create, and offers no atomic quote/price-lock parameter. A rate change between the fresh pricing response and acceptance can still exceed the refreshed reservation; final billing always uses accepted rates plus 25%. This narrow race cannot be eliminated by another client-side check. A resulting negative balance blocks new requests until topped up. The estimate is therefore not a contractual price cap.
 
 ## Webhooks and recovery
 
@@ -118,9 +122,28 @@ Restart Horizon after changing environment variables, then use Pixelforge's dash
 
 Signatures use HMAC-SHA256 over `timestamp.raw_body`, checked in constant time with a five-minute tolerance in either direction. The receiver persists the event under a unique primary key, enqueues processing after commit and returns 204. Repeated delivery preserves the original event record.
 
-Processing locks the event and settles in the same database transaction. A retried processing event cannot undo success or failure. An early webhook can match the pre-existing local generation via its metadata even before the create response has returned. The scheduled reconciler also retries unprocessed inbox records if queuing was interrupted after commit.
+Processing locks the event and settles in the same database transaction. A retried processing event cannot undo success or failure. An early webhook can match the pre-existing local generation via its metadata even before the create response has returned. The scheduled reconciler also retries pending inbox records if queuing was interrupted after commit. Events without a matching local generation remain **unmatched**, with `processed_at` unset, an attempt count, last/next attempt timestamps and a diagnostic. They get at most six automatic attempts (delays of 30, 120, 600, 1,800 and 3,600 seconds). Duplicate deliveries cannot bypass the delay or reset the budget. The first unmatched attempt emits an operator warning. Exhausted processing jobs become **failed**, remain unprocessed and are visible in Horizon.
 
-Polling starts after submission and repeats every 15 seconds until terminal. The scheduler recovers stalled polling and fresh submissions whose post-commit dispatch was interrupted. Unique submit jobs prevent competing retries of the same request. All create attempts reuse the original idempotency key and immutable parameters.
+Inspect or replay stored events on the server:
+
+```sh
+php artisan prism:webhooks
+php artisan prism:webhooks --replay=evt_REPLACE_ME
+```
+
+The list shows unmatched and failed events, their provider generation IDs and retry timing. Replay explicitly bypasses the delay/budget for one attempt, preserves the original event ID and payload, and never inserts a second inbox record. Already processed events are no-ops. An unmatched replay still records its attempt and remains visible for investigation.
+
+Polling starts after submission and repeats every 15 seconds until terminal. Permanent HTTP 4xx errors other than 408/429 pause polling instead of entering repeated recovery cycles. The generation retains its hold and provider slot, records the HTTP status and pause time, tells the user support must investigate, and emits an operator warning/failed Horizon job. A 404 is not proof that an accepted generation was never billed, so it never triggers a refund.
+
+After fixing provider credentials/access and restarting Horizon when configuration changed, resume one generation explicitly:
+
+```sh
+php artisan prism:resume-polling LOCAL_GENERATION_UUID
+```
+
+Scheduled recovery and duplicate poll jobs skip paused generations. The resume command preserves money and resets polling failures/cooldowns. A valid webhook can still update or settle a paused generation and clear its pause automatically.
+
+The scheduler recovers stalled polling and fresh submissions whose post-commit dispatch was interrupted. Unique submit jobs prevent competing retries of the same request. All create attempts reuse the original idempotency key and immutable parameters.
 
 If all submission attempts fail with an ambiguous connection error, the app retains the reservation rather than assuming no provider charge exists. An operator can safely retry:
 
@@ -176,9 +199,9 @@ npm test
 npm run build
 ```
 
-MySQL/PostgreSQL race tests start six independent processes at the same time. They verify that distinct requests cannot reserve the same money, replayed submissions create one hold, simultaneous terminal updates create one charge, and workers cannot overbook provider slots, request allowance or daily allowance. SQLite skips these six row-lock tests; the ordinary functional suite still runs there. These tests run only against the isolated CI/test database.
+MySQL/PostgreSQL race tests start six independent processes at the same time. They verify that distinct requests cannot reserve the same money, replayed submissions create one hold, and simultaneous terminal updates create one charge. They also check provider slot, request and daily limits, plus competing price increases against the same available funds. SQLite skips these seven row-lock tests; the ordinary functional suite still runs there. These tests run only against the isolated CI/test database.
 
-The tests isolate all provider HTTP requests and cover money precision and Unicode, mutable pricing, quote expiry and ownership, credit reservations, idempotent purchases/submissions, success/failure settlement, forged/stale signatures, repeated and out-of-order webhooks, early webhooks, polling recovery, account-wide quotas, UTC midnight, bounded retries, cross-job cooldowns, lost responses followed by rejection, auth isolation and usage reconciliation.
+The tests isolate all provider HTTP requests and cover money precision and Unicode, mutable pricing, quote expiry and ownership, credit reservations, idempotent purchases/submissions, success/failure settlement, forged/stale signatures, repeated and out-of-order webhooks, early webhooks, polling recovery, account-wide quotas, UTC midnight, bounded retries, cross-job cooldowns, lost responses followed by rejection, fresh pricing and unaffordable increases, permanent poll pauses/resumption, bounded unmatched webhook retries/replay, auth isolation and usage reconciliation.
 
 GitHub Actions runs the suite against SQLite, MySQL and PostgreSQL with Redis available, builds the frontend and checks Composer metadata. Unit/feature tests use an array cache, synchronous queue and isolated test database, so running `php artisan test` does not modify your local MySQL app data or Redis jobs. Local end-to-end verification also exercised a real Pixelforge success and failure and matched provider usage to the nanodollar. Live dashboard webhook delivery needs a configured tunnel and signing secret; signed receiver behavior is covered by automated tests.
 

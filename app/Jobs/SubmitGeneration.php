@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Exceptions\ProviderLimited;
+use App\Exceptions\SubmissionStopped;
 use App\Models\Generation;
 use App\Services\GenerationService;
 use App\Services\Pixelforge;
@@ -54,8 +55,20 @@ class SubmitGeneration implements ShouldBeUnique, ShouldQueue
 
             return;
         }
+        $checkingPricing = true;
         try {
+            $provider->checkSubmission($generation);
+            $pricing = $provider->pricing(fresh: true);
+            if (! $service->refreshReservation($generation, $pricing)) {
+                $this->finishRetries($generation, $service, 'Prices increased while this request waited. Add credits and request a new estimate. You were not charged.');
+
+                return;
+            }
+            $generation->refresh();
+            $checkingPricing = false;
             $object = $provider->submit($generation);
+        } catch (SubmissionStopped) {
+            return;
         } catch (ProviderLimited $exception) {
             $generation->update(['waiting_message' => $exception->getMessage(), 'submission_retry_at' => now()->addSeconds($exception->retryAfter)->ceilSecond()]);
             $this->release($exception->retryAfter);
@@ -63,6 +76,11 @@ class SubmitGeneration implements ShouldBeUnique, ShouldQueue
             return;
         } catch (RequestException $exception) {
             $generation->refresh();
+            if ($checkingPricing) {
+                $this->pricingUnavailable($generation, $service, (int) $exception->response->header('Retry-After', 0));
+
+                return;
+            }
             $status = $exception->response->status();
             if (in_array($status, [400, 401, 404, 409, 422], true) || $generation->submission_attempts >= ProviderLimits::MAX_SUBMISSION_ATTEMPTS) {
                 $this->finishRetries($generation, $service, $exception->response->json('error.message') ?? 'The image service rejected this request. You were not charged.');
@@ -74,6 +92,11 @@ class SubmitGeneration implements ShouldBeUnique, ShouldQueue
             return;
         } catch (ConnectionException $exception) {
             $generation->refresh();
+            if ($checkingPricing) {
+                $this->pricingUnavailable($generation, $service);
+
+                return;
+            }
             if ($generation->submission_attempts >= ProviderLimits::MAX_SUBMISSION_ATTEMPTS) {
                 $this->finishRetries($generation, $service, 'The image service could not accept this request. You were not charged.');
             } else {
@@ -86,6 +109,19 @@ class SubmitGeneration implements ShouldBeUnique, ShouldQueue
         if (! $generation->fresh()->terminal()) {
             SyncGeneration::dispatch($generation->id)->delay(now()->addSeconds(10));
         }
+    }
+
+    private function pricingUnavailable(Generation $generation, GenerationService $service, int $retryAfter = 0): void
+    {
+        $generation->increment('pricing_failures');
+        if ($generation->pricing_failures >= 6) {
+            $this->finishRetries($generation, $service, 'Current pricing is unavailable. Please request a new estimate. You were not charged.');
+
+            return;
+        }
+        $delay = max($retryAfter, $this->backoff()[min($generation->pricing_failures - 1, 4)]);
+        $generation->update(['submission_retry_at' => now()->addSeconds($delay)->ceilSecond(), 'waiting_message' => 'Checking current pricing before reserving credits. Your request will retry automatically.']);
+        $this->release($delay);
     }
 
     private function retryLater(Generation $generation, int $retryAfter = 0): void

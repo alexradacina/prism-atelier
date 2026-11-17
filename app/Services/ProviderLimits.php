@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Exceptions\ProviderLimited;
+use App\Exceptions\SubmissionStopped;
 use App\Models\Generation;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\Response;
@@ -13,11 +14,11 @@ class ProviderLimits
     public const MAX_SUBMISSION_ATTEMPTS = 6;
 
     /** Atomically reserve an HTTP request and, for creates, provider capacity. */
-    public function acquire(?Generation $submission = null): bool
+    public function acquire(?Generation $submission = null, bool $reserve = true): bool
     {
         $this->ensureAccount();
 
-        return DB::transaction(function () use ($submission) {
+        return DB::transaction(function () use ($submission, $reserve) {
             $account = $this->lockAccount();
             $now = CarbonImmutable::now('UTC');
             $this->waitUntil($account->blocked_until, 'The image service is busy. Your request will retry automatically.');
@@ -33,6 +34,9 @@ class ProviderLimits
             $wasUncertain = false;
             if ($submission !== null) {
                 $generation = Generation::query()->lockForUpdate()->findOrFail($submission->id);
+                if ($generation->terminal() || $generation->provider_id !== null) {
+                    throw new SubmissionStopped('The generation has already been resolved or accepted.');
+                }
                 if ($generation->provider_account !== config('services.pixelforge.account_scope')) {
                     throw new \LogicException('This generation belongs to a different provider account.');
                 }
@@ -60,11 +64,17 @@ class ProviderLimits
                     }
                 }
                 $wasUncertain = $generation->submission_uncertain;
+                if (! $reserve) {
+                    return $wasUncertain;
+                }
                 $generation->update([
                     'provider_slot' => true, 'submission_uncertain' => true,
                     'submission_attempts' => $generation->submission_attempts + 1,
                     'submission_retry_at' => null, 'waiting_message' => null,
                 ]);
+            }
+            if (! $reserve) {
+                return false;
             }
             $requests[] = $now->ceilSecond()->timestamp;
             DB::table('provider_accounts')->where('scope', $account->scope)->update([

@@ -82,6 +82,33 @@ class GenerationService
         }, 5);
     }
 
+    /** Raise a pending hold under the same wallet lock used for every reservation. */
+    public function refreshReservation(Generation $generation, array $pricing): bool
+    {
+        return DB::transaction(function () use ($generation, $pricing) {
+            $user = User::query()->lockForUpdate()->findOrFail($generation->user_id);
+            $locked = Generation::query()->lockForUpdate()->findOrFail($generation->id);
+            if ($locked->terminal() || $locked->provider_id !== null) {
+                return true;
+            }
+            $maximum = Money::estimate($locked->only(['prompt', 'size', 'quality', 'reference_images']), $pricing)['maximum_nanos'];
+            $increase = max(0, $maximum - $locked->reserved_nanos);
+            if ($increase > $user->balance_nanos - $user->reserved_nanos) {
+                return false;
+            }
+            if ($increase > 0) {
+                $user->increment('reserved_nanos', $increase);
+                $locked->reserved_nanos += $increase;
+            }
+            $locked->submission_pricing = $pricing;
+            $locked->pricing_checked_at = now();
+            $locked->pricing_failures = 0;
+            $locked->save();
+
+            return true;
+        }, 5);
+    }
+
     /** Shared settlement path for submission responses, polling, and webhook events. */
     public function apply(Generation $generation, array $object): void
     {
@@ -103,15 +130,17 @@ class GenerationService
             $locked->provider_slot = ! in_array($object['status'], ['succeeded', 'failed'], true);
             $locked->waiting_message = null;
             $locked->submission_retry_at = null;
+            $locked->sync_paused_at = null;
+            $locked->sync_error_status = null;
             $locked->synced_at = now();
             $locked->rates = $object['rates'];
+            $locked->error_message = $object['error']['message'] ?? null;
             if ($locked->status === 'processing' && $object['status'] === 'queued') {
                 $locked->save();
 
                 return;
             }
             $locked->status = $object['status'];
-            $locked->error_message = $object['error']['message'] ?? null;
             if ($locked->terminal()) {
                 $providerCost = $locked->status === 'succeeded' ? Money::cost($object['usage'], $object['rates']) : 0;
                 $charge = Money::charge($providerCost);
