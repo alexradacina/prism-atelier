@@ -341,9 +341,6 @@ const visibleIdeas = shuffledIdeas.slice(0, 3);
                         <span aria-hidden="true">+</span> Add reference image
                     </button>
                 </div>
-                <p v-if="form.errors.quote_id" class="field-error" role="alert">
-                    {{ form.errors.quote_id }}
-                </p>
                 <div class="mobile-generate">
                     <button
                         class="button primary"
@@ -356,6 +353,13 @@ const visibleIdeas = shuffledIdeas.slice(0, 3);
                     >
                         Generate image <span>↗</span>
                     </button>
+                    <p
+                        v-if="form.errors.quote_id"
+                        class="field-error"
+                        role="alert"
+                    >
+                        {{ form.errors.quote_id }}
+                    </p>
                 </div>
             </form>
             <aside class="studio-aside">
@@ -396,16 +400,6 @@ const visibleIdeas = shuffledIdeas.slice(0, 3);
                     <p v-else class="quote-hint">
                         Your estimate will appear as you write.
                     </p>
-                    <p v-if="quoteError" class="field-error" role="alert">
-                        {{ quoteError }}
-                        <button
-                            type="button"
-                            class="text-button"
-                            @click="estimate"
-                        >
-                            Try again
-                        </button>
-                    </p>
                     <p v-if="quote && !validQuote" class="field-error">
                         Your estimate expired.
                         <button
@@ -436,6 +430,23 @@ const visibleIdeas = shuffledIdeas.slice(0, 3);
                                 : "Generate image"
                         }}<span>✧</span>
                     </button>
+                    <p
+                        v-if="form.errors.quote_id"
+                        class="field-error"
+                        role="alert"
+                    >
+                        {{ form.errors.quote_id }}
+                    </p>
+                    <p v-if="quoteError" class="field-error" role="alert">
+                        {{ quoteError }}
+                        <button
+                            type="button"
+                            class="text-button"
+                            @click="estimate"
+                        >
+                            Try again
+                        </button>
+                    </p>
                     <p class="reserve-note">
                         <span>⌁</span> Unused reserved credits return
                         automatically.<br />Failed generations always cost $0.
